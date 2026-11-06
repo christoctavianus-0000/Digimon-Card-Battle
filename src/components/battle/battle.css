@@ -1,0 +1,1362 @@
+/* ============================================================================
+ * Digimon Digital Card Battle (PS1) — Cyber-Digital Digivice Arena Stylesheet
+ * ============================================================================ */
+
+.ddcb-arena-root {
+  --bg-deep: #050914;
+  --bg-panel: rgba(11, 20, 42, 0.92);
+  --bg-panel-elevated: rgba(18, 32, 64, 0.95);
+  --bg-glass: rgba(10, 22, 46, 0.78);
+  --border-cyber: #26549c;
+  --border-glow: #38bdf8;
+  --accent-cyan: #00e5ff;
+  --accent-amber: #fbbf24;
+  --accent-gold: #f59e0b;
+  --accent-red: #f43f5e;
+  --accent-green: #10b981;
+  --accent-purple: #a855f7;
+  --text-main: #f1f5f9;
+  --text-muted: #94a3b8;
+  --text-dim: #64748b;
+
+  /* Specialty palette */
+  --spec-fire-bg: linear-gradient(135deg, #991b1b 0%, #ef4444 100%);
+  --spec-fire-border: #f87171;
+  --spec-ice-bg: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+  --spec-ice-border: #60a5fa;
+  --spec-nature-bg: linear-gradient(135deg, #065f46 0%, #10b981 100%);
+  --spec-nature-border: #34d399;
+  --spec-darkness-bg: linear-gradient(135deg, #3b0764 0%, #7e22ce 100%);
+  --spec-darkness-border: #c084fc;
+  --spec-rare-bg: linear-gradient(135deg, #92400e 0%, #f59e0b 100%);
+  --spec-rare-border: #fcd34d;
+
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  background-color: var(--bg-deep);
+  background-image:
+    radial-gradient(circle at 50% 48%, rgba(14, 116, 144, 0.18) 0%, transparent 65%),
+    linear-gradient(rgba(30, 64, 175, 0.14) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(30, 64, 175, 0.14) 1px, transparent 1px);
+  background-size: 100% 100%, 36px 36px, 36px 36px;
+  color: var(--text-main);
+  font-family: 'Segoe UI', 'Roboto', 'Inter', system-ui, -apple-system, sans-serif;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.ddcb-arena-root *,
+.ddcb-arena-root *::before,
+.ddcb-arena-root *::after {
+  box-sizing: border-box;
+}
+
+/* Subtle CRT scanline effect */
+.ddcb-arena-root::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.09) 0px,
+    rgba(0, 0, 0, 0.09) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  z-index: 40;
+}
+
+/* ============================================================================
+ * Top HUD Bar
+ * ============================================================================ */
+
+.ddcb-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  background: linear-gradient(180deg, #0f1f42 0%, #081229 100%);
+  border-bottom: 2px solid var(--border-cyber);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  z-index: 20;
+  flex-wrap: wrap;
+}
+
+.ddcb-top-group {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.ddcb-turn-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.7rem;
+  background: #061024;
+  border: 1px solid var(--accent-cyan);
+  border-radius: 6px;
+  font-weight: 800;
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  color: var(--accent-cyan);
+  text-transform: uppercase;
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.2);
+}
+
+.ddcb-phase-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.32rem 0.85rem;
+  border-radius: 6px;
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.22), rgba(56, 189, 248, 0.22));
+  border: 1px solid var(--accent-amber);
+  color: #fef3c7;
+  font-weight: 800;
+  font-size: 0.85rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.ddcb-active-player-pill {
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ddcb-active-player-pill.is-player {
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid #34d399;
+  color: #6ee7b7;
+}
+
+.ddcb-active-player-pill.is-opponent {
+  background: rgba(244, 63, 94, 0.2);
+  border: 1px solid #fb7185;
+  color: #fda4af;
+}
+
+/* Scoreboard (KO Orbs) */
+.ddcb-scoreboard {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.3rem 0.9rem;
+  background: rgba(4, 10, 24, 0.88);
+  border: 1px solid #335c9e;
+  border-radius: 8px;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.7);
+}
+
+.ddcb-score-side {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.ddcb-score-side.player {
+  color: #38bdf8;
+}
+
+.ddcb-score-side.opponent {
+  color: #fb7185;
+}
+
+.ddcb-ko-orbs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.ddcb-ko-orb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #475569;
+  background: #0f172a;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.ddcb-ko-orb.filled.player {
+  background: radial-gradient(circle at 35% 35%, #a5f3fc, #0284c7);
+  border-color: #38bdf8;
+  box-shadow: 0 0 10px #00e5ff;
+  transform: scale(1.1);
+}
+
+.ddcb-ko-orb.filled.opponent {
+  background: radial-gradient(circle at 35% 35%, #fecdd3, #e11d48);
+  border-color: #fb7185;
+  box-shadow: 0 0 10px #f43f5e;
+  transform: scale(1.1);
+}
+
+.ddcb-score-vs {
+  font-size: 0.72rem;
+  font-weight: 900;
+  color: var(--accent-amber);
+  letter-spacing: 0.08em;
+}
+
+/* Opponent Badge & Top Controls */
+.ddcb-opponent-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.25rem 0.65rem;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid #334155;
+  border-radius: 6px;
+  font-size: 0.78rem;
+}
+
+.ddcb-opponent-name {
+  font-weight: 800;
+  color: #fda4af;
+}
+
+.ddcb-opponent-deck {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+
+.ddcb-diff-badge {
+  padding: 0.1rem 0.42rem;
+  border-radius: 4px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.ddcb-diff-badge.easy {
+  background: rgba(16, 185, 129, 0.2);
+  color: #6ee7b7;
+  border: 1px solid #059669;
+}
+
+.ddcb-diff-badge.normal {
+  background: rgba(59, 130, 246, 0.2);
+  color: #93c5fd;
+  border: 1px solid #2563eb;
+}
+
+.ddcb-diff-badge.hard {
+  background: rgba(244, 63, 94, 0.22);
+  color: #fda4af;
+  border: 1px solid #e11d48;
+}
+
+.ddcb-hud-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.32rem 0.65rem;
+  background: linear-gradient(180deg, #1e3a6d 0%, #102347 100%);
+  border: 1px solid #3b69b8;
+  border-radius: 6px;
+  color: #e2e8f0;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ddcb-hud-btn:hover {
+  background: linear-gradient(180deg, #274c8c 0%, #173263 100%);
+  border-color: var(--accent-cyan);
+  color: #ffffff;
+  box-shadow: 0 0 8px rgba(0, 229, 255, 0.3);
+}
+
+.ddcb-hud-btn.active {
+  background: linear-gradient(180deg, #0284c7 0%, #0369a1 100%);
+  border-color: var(--accent-cyan);
+  color: #ffffff;
+}
+
+.ddcb-hud-btn.danger {
+  background: linear-gradient(180deg, #7f1d1d 0%, #450a0a 100%);
+  border-color: #ef4444;
+  color: #fecaca;
+}
+
+.ddcb-hud-btn.danger:hover {
+  background: linear-gradient(180deg, #991b1b 0%, #7f1d1d 100%);
+  border-color: #f87171;
+  color: #ffffff;
+}
+
+/* ============================================================================
+ * Main Arena Grid (Opponent Half, Center Clash, Player Half)
+ * ============================================================================ */
+
+.ddcb-arena-body {
+  flex: 1;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 0.65rem;
+  padding: 0.65rem 1rem 0.85rem;
+  max-width: 1560px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.ddcb-half-row {
+  display: grid;
+  grid-template-columns: 290px 1fr 290px;
+  gap: 0.75rem;
+  align-items: stretch;
+}
+
+@media (max-width: 1120px) {
+  .ddcb-half-row {
+    grid-template-columns: 240px 1fr 240px;
+  }
+}
+
+@media (max-width: 900px) {
+  .ddcb-half-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Cyber Window Panel */
+.ddcb-panel {
+  background: var(--bg-panel);
+  border: 2px solid var(--border-cyber);
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  padding: 0.65rem;
+  position: relative;
+}
+
+.ddcb-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.73rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #93c5fd;
+  padding-bottom: 0.4rem;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(59, 130, 246, 0.28);
+}
+
+/* ============================================================================
+ * Zones: Online Deck, Offline Pile, DP Slot, Opponent Hand
+ * ============================================================================ */
+
+.ddcb-zones-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
+.ddcb-zone-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.45rem 0.35rem;
+  background: rgba(6, 13, 30, 0.85);
+  border: 1px solid #2b4c85;
+  border-radius: 8px;
+  min-height: 92px;
+  cursor: pointer;
+  transition: all 0.16s ease;
+  position: relative;
+  text-align: center;
+}
+
+.ddcb-zone-box:hover {
+  border-color: var(--accent-cyan);
+  background: rgba(14, 30, 64, 0.9);
+  transform: translateY(-1px);
+}
+
+.ddcb-zone-box.interactive-highlight {
+  border: 2px solid var(--accent-amber);
+  background: rgba(245, 158, 11, 0.15);
+  box-shadow: 0 0 14px rgba(245, 158, 11, 0.45);
+  animation: ddcb-pulse-amber 1.4s infinite;
+}
+
+@keyframes ddcb-pulse-amber {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 18px rgba(245, 158, 11, 0.75);
+  }
+}
+
+.ddcb-zone-label {
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.ddcb-zone-value {
+  font-size: 1.15rem;
+  font-weight: 900;
+  color: #f8fafc;
+  line-height: 1.1;
+}
+
+.ddcb-zone-value.dp-value {
+  color: var(--accent-amber);
+  text-shadow: 0 0 8px rgba(251, 191, 36, 0.45);
+}
+
+.ddcb-zone-sub {
+  font-size: 0.65rem;
+  color: #93c5fd;
+  font-weight: 600;
+}
+
+/* Opponent Face-down Hand Cards */
+.ddcb-opp-hand-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  min-height: 58px;
+}
+
+.ddcb-card-back {
+  width: 42px;
+  height: 58px;
+  border-radius: 5px;
+  background: linear-gradient(135deg, #1e3a8a 0%, #091536 55%, #172554 100%);
+  border: 1.5px solid #60a5fa;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.65), inset 0 0 8px rgba(56, 189, 248, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.ddcb-card-back::before {
+  content: 'D';
+  font-size: 0.85rem;
+  font-weight: 900;
+  color: rgba(147, 197, 253, 0.75);
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.65);
+}
+
+/* ============================================================================
+ * Active Digimon Battle Slot
+ * ============================================================================ */
+
+.ddcb-battle-slot {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 0.8rem;
+  align-items: center;
+  background: linear-gradient(180deg, rgba(14, 28, 58, 0.95) 0%, rgba(7, 15, 34, 0.96) 100%);
+  border: 2px solid #2e5cb8;
+  border-radius: 12px;
+  padding: 0.75rem;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.ddcb-battle-slot.player-slot {
+  border-color: #0284c7;
+}
+
+.ddcb-battle-slot.opponent-slot {
+  border-color: #be123c;
+}
+
+.ddcb-battle-slot.empty-slot {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  min-height: 165px;
+  border-style: dashed;
+  opacity: 0.88;
+}
+
+@media (max-width: 640px) {
+  .ddcb-battle-slot {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ddcb-digimon-portrait-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+}
+
+.ddcb-digimon-card-frame {
+  width: 136px;
+  height: 136px;
+  border-radius: 10px;
+  border: 2px solid #60a5fa;
+  background: #091326;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.65);
+  transition: transform 0.16s ease, border-color 0.16s ease;
+}
+
+.ddcb-digimon-card-frame:hover {
+  transform: scale(1.03);
+  border-color: var(--accent-cyan);
+}
+
+.ddcb-digimon-card-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ddcb-level-pill {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 0.14rem 0.45rem;
+  border-radius: 5px;
+  background: rgba(6, 12, 28, 0.9);
+  border: 1px solid var(--accent-amber);
+  color: var(--accent-amber);
+  font-weight: 900;
+  font-size: 0.75rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.65);
+}
+
+.ddcb-stack-pill {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  padding: 0.12rem 0.42rem;
+  border-radius: 5px;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid #38bdf8;
+  color: #bae6fd;
+  font-size: 0.68rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+/* Specialty Badges */
+.ddcb-specialty-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.16rem 0.52rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #ffffff;
+}
+
+.ddcb-specialty-badge.Fire {
+  background: var(--spec-fire-bg);
+  border: 1px solid var(--spec-fire-border);
+}
+
+.ddcb-specialty-badge.Ice {
+  background: var(--spec-ice-bg);
+  border: 1px solid var(--spec-ice-border);
+}
+
+.ddcb-specialty-badge.Nature {
+  background: var(--spec-nature-bg);
+  border: 1px solid var(--spec-nature-border);
+}
+
+.ddcb-specialty-badge.Darkness {
+  background: var(--spec-darkness-bg);
+  border: 1px solid var(--spec-darkness-border);
+}
+
+.ddcb-specialty-badge.Rare {
+  background: var(--spec-rare-bg);
+  border: 1px solid var(--spec-rare-border);
+}
+
+/* Digimon Stats & Attacks Column */
+.ddcb-digimon-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.ddcb-digimon-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.ddcb-digimon-name {
+  font-size: 1.05rem;
+  font-weight: 900;
+  color: #ffffff;
+  letter-spacing: 0.02em;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.ddcb-card-no {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  font-family: monospace;
+}
+
+/* Animated HP Bar */
+.ddcb-hp-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+}
+
+.ddcb-hp-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.ddcb-hp-label {
+  color: var(--accent-amber);
+  letter-spacing: 0.06em;
+}
+
+.ddcb-hp-numbers {
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 0.92rem;
+  font-weight: 900;
+  color: #f8fafc;
+}
+
+.ddcb-hp-numbers.overheal {
+  color: #38bdf8;
+  text-shadow: 0 0 8px rgba(56, 189, 248, 0.5);
+}
+
+.ddcb-hp-numbers.critical {
+  color: #fb7185;
+}
+
+.ddcb-hp-track {
+  width: 100%;
+  height: 12px;
+  background: #050b18;
+  border: 1px solid #334155;
+  border-radius: 999px;
+  overflow: hidden;
+  padding: 1px;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.8);
+}
+
+.ddcb-hp-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1), background 0.3s ease;
+}
+
+.ddcb-hp-fill.high {
+  background: linear-gradient(90deg, #059669 0%, #34d399 100%);
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.45);
+}
+
+.ddcb-hp-fill.mid {
+  background: linear-gradient(90deg, #d97706 0%, #fbbf24 100%);
+  box-shadow: 0 0 8px rgba(251, 191, 36, 0.45);
+}
+
+.ddcb-hp-fill.low {
+  background: linear-gradient(90deg, #be123c 0%, #fb7185 100%);
+  box-shadow: 0 0 8px rgba(244, 63, 94, 0.55);
+}
+
+/* Attack List & Interactive Attack Selection Buttons */
+.ddcb-attacks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.32rem;
+}
+
+.ddcb-attack-row {
+  display: grid;
+  grid-template-columns: 28px 1fr auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.32rem 0.55rem;
+  background: rgba(6, 14, 32, 0.85);
+  border: 1px solid #1e3a6d;
+  border-radius: 7px;
+  font-size: 0.8rem;
+  transition: all 0.15s ease;
+}
+
+.ddcb-attack-row.selectable {
+  cursor: pointer;
+  border-color: #38bdf8;
+  background: linear-gradient(90deg, rgba(14, 116, 144, 0.25) 0%, rgba(15, 23, 42, 0.9) 100%);
+}
+
+.ddcb-attack-row.selectable:hover {
+  background: linear-gradient(90deg, rgba(14, 165, 233, 0.38) 0%, rgba(30, 58, 138, 0.92) 100%);
+  border-color: var(--accent-amber);
+  transform: translateX(3px);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
+}
+
+.ddcb-attack-row.selected-attack {
+  border: 2px solid var(--accent-amber);
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.28) 0%, rgba(15, 23, 42, 0.95) 100%);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.35);
+}
+
+.ddcb-attack-name {
+  font-weight: 700;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ddcb-attack-effect-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.1rem 0.42rem;
+  border-radius: 4px;
+  background: rgba(168, 85, 247, 0.22);
+  border: 1px solid #a855f7;
+  color: #e9d5ff;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.ddcb-attack-effect-tag.jammed {
+  text-decoration: line-through;
+  opacity: 0.55;
+  border-color: #ef4444;
+  color: #fca5a5;
+}
+
+.ddcb-attack-power {
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-weight: 900;
+  font-size: 0.9rem;
+  color: var(--accent-amber);
+  min-width: 42px;
+  text-align: right;
+}
+
+.ddcb-attack-power.boosted {
+  color: #34d399;
+}
+
+.ddcb-attack-power.reduced {
+  color: #fb7185;
+}
+
+/* Modifier Pills */
+.ddcb-modifiers-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.15rem;
+}
+
+.ddcb-mod-chip {
+  padding: 0.12rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.67rem;
+  font-weight: 800;
+  background: rgba(56, 189, 248, 0.16);
+  border: 1px solid #38bdf8;
+  color: #bae6fd;
+}
+
+.ddcb-mod-chip.digivolve-mod {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: var(--accent-amber);
+  color: #fde68a;
+}
+
+/* ============================================================================
+ * Center Clash & Support Zone
+ * ============================================================================ */
+
+.ddcb-center-clash {
+  display: grid;
+  grid-template-columns: 1fr 1.35fr 1fr;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.55rem 0.85rem;
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.92) 0%, rgba(23, 37, 84, 0.95) 50%, rgba(15, 23, 42, 0.92) 100%);
+  border: 2px solid #3b82f6;
+  border-radius: 12px;
+  box-shadow: 0 0 24px rgba(37, 99, 235, 0.25), inset 0 0 18px rgba(0, 0, 0, 0.6);
+  position: relative;
+}
+
+@media (max-width: 900px) {
+  .ddcb-center-clash {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ddcb-support-slot-card {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.45rem 0.6rem;
+  background: rgba(6, 12, 26, 0.88);
+  border: 1px solid #335c9e;
+  border-radius: 8px;
+  min-height: 76px;
+  position: relative;
+}
+
+.ddcb-support-slot-card.clickable {
+  cursor: pointer;
+}
+
+.ddcb-support-slot-card.clickable:hover {
+  border-color: var(--accent-cyan);
+}
+
+.ddcb-support-thumb {
+  width: 52px;
+  height: 52px;
+  border-radius: 6px;
+  border: 1px solid #60a5fa;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #0a1428;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ddcb-support-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ddcb-voided-stamp {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(69, 10, 10, 0.68);
+  border-radius: 8px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.ddcb-voided-stamp span {
+  padding: 0.18rem 0.65rem;
+  border: 2px solid #ef4444;
+  border-radius: 4px;
+  background: rgba(127, 29, 29, 0.95);
+  color: #fecaca;
+  font-weight: 900;
+  font-size: 0.82rem;
+  letter-spacing: 0.12em;
+  transform: rotate(-8deg);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.75);
+}
+
+/* Clash Status / Resolution Center */
+.ddcb-clash-hud {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  text-align: center;
+}
+
+.ddcb-clash-vs-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  width: 100%;
+}
+
+.ddcb-clash-side-Readout {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 8px;
+  background: rgba(5, 10, 24, 0.85);
+  border: 1px solid #2b4c85;
+}
+
+.ddcb-first-atk-tag {
+  padding: 0.1rem 0.38rem;
+  border-radius: 4px;
+  background: var(--accent-amber);
+  color: #090d16;
+  font-size: 0.64rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.ddcb-resolution-ticker {
+  width: 100%;
+  padding: 0.4rem 0.7rem;
+  border-radius: 7px;
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.9), rgba(30, 64, 175, 0.55), rgba(15, 23, 42, 0.9));
+  border: 1px solid #60a5fa;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.ddcb-resolution-ticker.strike {
+  border-color: var(--accent-amber);
+  background: linear-gradient(90deg, rgba(120, 53, 15, 0.65), rgba(180, 83, 9, 0.45));
+}
+
+.ddcb-resolution-ticker.ko {
+  border-color: #f43f5e;
+  background: linear-gradient(90deg, rgba(136, 19, 55, 0.75), rgba(190, 18, 60, 0.55));
+}
+
+/* ============================================================================
+ * Player Hand Dock & Context-Sensitive Action Buttons
+ * ============================================================================ */
+
+.ddcb-hand-dock {
+  background: linear-gradient(180deg, rgba(12, 24, 52, 0.95) 0%, rgba(6, 12, 28, 0.98) 100%);
+  border: 2px solid #2b579a;
+  border-radius: 12px;
+  padding: 0.65rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.ddcb-hand-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.ddcb-phase-instruction {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #bae6fd;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.ddcb-hand-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.65rem;
+}
+
+.ddcb-hand-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: linear-gradient(180deg, #102042 0%, #091328 100%);
+  border: 2px solid #294a80;
+  border-radius: 10px;
+  padding: 0.55rem;
+  transition: all 0.16s ease;
+  position: relative;
+}
+
+.ddcb-hand-card:hover {
+  border-color: #60a5fa;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55);
+}
+
+.ddcb-hand-card.has-legal-action {
+  border-color: #38bdf8;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.22);
+}
+
+.ddcb-hand-card.target-highlight {
+  border-color: var(--accent-amber);
+  box-shadow: 0 0 16px rgba(245, 158, 11, 0.45);
+}
+
+.ddcb-hand-card-top {
+  display: flex;
+  gap: 0.55rem;
+  cursor: pointer;
+}
+
+.ddcb-hand-thumb {
+  width: 66px;
+  height: 66px;
+  border-radius: 7px;
+  border: 1.5px solid #475569;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #060d1f;
+  position: relative;
+}
+
+.ddcb-hand-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ddcb-hand-card-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.ddcb-hand-card-title {
+  font-size: 0.84rem;
+  font-weight: 800;
+  color: #f8fafc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ddcb-hand-stat-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.ddcb-mini-badge {
+  padding: 0.08rem 0.36rem;
+  border-radius: 4px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid #334155;
+  color: #cbd5e1;
+}
+
+.ddcb-mini-badge.dp {
+  border-color: #f59e0b;
+  color: #fcd34d;
+}
+
+.ddcb-mini-badge.plusp {
+  border-color: #10b981;
+  color: #6ee7b7;
+}
+
+.ddcb-mini-badge.hp {
+  border-color: #38bdf8;
+  color: #7dd3fc;
+}
+
+.ddcb-hand-support-preview {
+  font-size: 0.7rem;
+  color: #94a3b8;
+  margin-top: 0.35rem;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ddcb-hand-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid rgba(51, 65, 85, 0.6);
+}
+
+.ddcb-action-btn {
+  flex: 1;
+  min-width: 92px;
+  padding: 0.32rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.28rem;
+  transition: all 0.14s ease;
+  text-align: center;
+}
+
+.ddcb-action-btn.primary {
+  background: linear-gradient(180deg, #0284c7 0%, #0369a1 100%);
+  border-color: #38bdf8;
+  color: #ffffff;
+}
+
+.ddcb-action-btn.primary:hover {
+  background: linear-gradient(180deg, #0ea5e9 0%, #0284c7 100%);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.45);
+}
+
+.ddcb-action-btn.amber {
+  background: linear-gradient(180deg, #d97706 0%, #b45309 100%);
+  border-color: #fbbf24;
+  color: #ffffff;
+}
+
+.ddcb-action-btn.amber:hover {
+  background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%);
+  box-shadow: 0 0 10px rgba(251, 191, 36, 0.5);
+}
+
+.ddcb-action-btn.emerald {
+  background: linear-gradient(180deg, #059669 0%, #047857 100%);
+  border-color: #34d399;
+  color: #ffffff;
+}
+
+.ddcb-action-btn.emerald:hover {
+  background: linear-gradient(180deg, #10b981 0%, #059669 100%);
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.45);
+}
+
+.ddcb-action-btn.purple {
+  background: linear-gradient(180deg, #7e22ce 0%, #581c87 100%);
+  border-color: #c084fc;
+  color: #ffffff;
+}
+
+.ddcb-action-btn.purple:hover {
+  background: linear-gradient(180deg, #9333ea 0%, #6b21a8 100%);
+  box-shadow: 0 0 10px rgba(192, 132, 252, 0.45);
+}
+
+/* Prominent Phase Action Buttons (End Preparation, Pass Support, Mulligan) */
+.ddcb-phase-cta-btn {
+  padding: 0.45rem 1.1rem;
+  border-radius: 8px;
+  font-size: 0.84rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  background: linear-gradient(180deg, #f59e0b 0%, #b45309 100%);
+  border: 2px solid #fde68a;
+  color: #090d16;
+  box-shadow: 0 0 16px rgba(245, 158, 11, 0.45);
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.ddcb-phase-cta-btn:hover {
+  transform: translateY(-1px) scale(1.02);
+  background: linear-gradient(180deg, #fbbf24 0%, #d97706 100%);
+  box-shadow: 0 0 22px rgba(251, 191, 36, 0.75);
+}
+
+/* ============================================================================
+ * Modals, Card Inspector, Battle Log Drawer & Post-Match Overlay
+ * ============================================================================ */
+
+.ddcb-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 7, 18, 0.82);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 60;
+}
+
+.ddcb-modal-card {
+  background: linear-gradient(180deg, #0f1f42 0%, #071024 100%);
+  border: 2px solid var(--accent-cyan);
+  border-radius: 14px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.85), 0 0 28px rgba(0, 229, 255, 0.22);
+  max-width: 720px;
+  width: 100%;
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: 1.25rem;
+  color: var(--text-main);
+}
+
+.ddcb-inspector-layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+@media (max-width: 640px) {
+  .ddcb-inspector-layout {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+}
+
+.ddcb-inspector-art {
+  width: 210px;
+  height: 210px;
+  border-radius: 12px;
+  border: 2px solid var(--accent-cyan);
+  overflow: hidden;
+  background: #050a18;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
+}
+
+.ddcb-inspector-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Battle Log Drawer */
+.ddcb-log-drawer {
+  position: fixed;
+  top: 56px;
+  right: 0;
+  bottom: 0;
+  width: 380px;
+  max-width: 92vw;
+  background: rgba(7, 14, 32, 0.97);
+  border-left: 2px solid var(--accent-cyan);
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.8);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+}
+
+.ddcb-log-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+}
+
+.ddcb-log-item {
+  padding: 0.4rem 0.55rem;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.85);
+  border-left: 3px solid #38bdf8;
+  line-height: 1.35;
+}
+
+.ddcb-log-item.opponent {
+  border-left-color: #fb7185;
+}
+
+.ddcb-log-item.combat {
+  border-left-color: var(--accent-amber);
+  background: rgba(120, 53, 15, 0.22);
+}
+
+.ddcb-log-item.ko {
+  border-left-color: #f43f5e;
+  background: rgba(136, 19, 55, 0.3);
+  font-weight: 700;
+}
+
+/* Zone Pile Grid inside Modal */
+.ddcb-pile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(125px, 1fr));
+  gap: 0.65rem;
+  margin-top: 0.75rem;
+}
+
+.ddcb-pile-card-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.45rem;
+  background: rgba(10, 20, 44, 0.9);
+  border: 1px solid #335c9e;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.ddcb-pile-card-item:hover {
+  border-color: var(--accent-cyan);
+  transform: translateY(-2px);
+}
+
+.ddcb-pile-card-item img {
+  width: 78px;
+  height: 78px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #475569;
+}
+
+.ddcb-inline-symbol {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  margin: 0 2px;
+}

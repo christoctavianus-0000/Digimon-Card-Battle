@@ -1,0 +1,189 @@
+#!/usr/bin/env node
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const projectRoot = path.resolve(__dirname, '..');
+
+const guideRoot = process.env.DDCB_GUIDE_DIR
+  ? path.resolve(process.env.DDCB_GUIDE_DIR)
+  : 'D:\\My AI Project\\Game Guide\\Digimon Card Battle';
+
+const allCardsPath = path.join(guideRoot, 'allCards.json');
+const outTsPath = path.join(projectRoot, 'src', 'data', 'cards.generated.ts');
+
+function parseAttackString(raw, slot, cardNo) {
+  if (!raw || raw === '-') {
+    throw new Error(`Missing ${slot} attack on Digimon card #${cardNo}`);
+  }
+  const match = raw.match(/^(.*)\s+\((\d+)\)(?:,\s*(.*))?$/);
+  if (!match) {
+    throw new Error(`Could not parse ${slot} attack "${raw}" on card #${cardNo}`);
+  }
+  const name = match[1].trim();
+  const power = Number.parseInt(match[2], 10);
+  const rawEffect = (match[3] || '').trim().replace(/\.$/, '');
+
+  if (!rawEffect || rawEffect.toLowerCase() === 'none') {
+    return { name, power };
+  }
+
+  const effect = parseXEffect(rawEffect, cardNo);
+  return { name, power, effect };
+}
+
+function parseXEffect(rawEffect, cardNo) {
+  const counterMatch = rawEffect.match(/^\[\[(circle|triangle|x)\]\]\s*Counter$/i);
+  if (counterMatch) {
+    return { type: 'counter', target: counterMatch[1].toLowerCase() };
+  }
+
+  const zeroMatch = rawEffect.match(/^\[\[(circle|triangle|x)\]\]\s*to\s*0$/i);
+  if (zeroMatch) {
+    return { type: 'zero', target: zeroMatch[1].toLowerCase() };
+  }
+
+  if (/^1st\s+Attack$/i.test(rawEffect)) {
+    return { type: 'firstAttack' };
+  }
+
+  if (/^Eat-up\s+HP$/i.test(rawEffect)) {
+    return { type: 'eatUpHp' };
+  }
+
+  if (/^Crash$/i.test(rawEffect)) {
+    return { type: 'crash' };
+  }
+
+  if (/^Jamming$/i.test(rawEffect)) {
+    return { type: 'jamming' };
+  }
+
+  const foeMatch = rawEffect.match(/^(Fire|Ice|Nature|Dark|Darkness|Rare)\s+Foe\s+x3$/i);
+  if (foeMatch) {
+    const rawSpec = foeMatch[1].toLowerCase();
+    const specMap = {
+      fire: 'Fire',
+      ice: 'Ice',
+      nature: 'Nature',
+      dark: 'Darkness',
+      darkness: 'Darkness',
+      rare: 'Rare',
+    };
+    return { type: 'foeX3', specialty: specMap[rawSpec] };
+  }
+
+  throw new Error(`Unrecognized X-effect "${rawEffect}" on card #${cardNo}`);
+}
+
+function copyDirFiles(srcDir, destDir, filterFn = () => true) {
+  if (!fs.existsSync(srcDir)) return 0;
+  fs.mkdirSync(destDir, { recursive: true });
+  let copied = 0;
+  for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    if (!filterFn(entry.name)) continue;
+    fs.copyFileSync(path.join(srcDir, entry.name), path.join(destDir, entry.name));
+    copied++;
+  }
+  return copied;
+}
+
+function fixMojibake(str) {
+  if (!str) return str;
+  return str
+    .replace(/\u00e2\u2014\u2039/g, '\u25cb') // â—‹ -> ○
+    .replace(/\u00e2\u2013\u00b3/g, '\u25b3') // â–³ -> △
+    .replace(/\u00c3\u2014/g, '\u00d7'); // Ã— -> ×
+}
+
+function main() {
+  if (!fs.existsSync(allCardsPath)) {
+    throw new Error(`Source allCards.json not found at: ${allCardsPath}`);
+  }
+
+  const rawCards = JSON.parse(fs.readFileSync(allCardsPath, 'utf8'));
+  if (!Array.isArray(rawCards) || rawCards.length !== 301) {
+    throw new Error(`Expected 301 cards in allCards.json, found ${rawCards?.length}`);
+  }
+
+  const cards = rawCards.map((c) => {
+    const id = Number.parseInt(c.no, 10);
+    const name = fixMojibake(c.name);
+    const isOption = c.category === 'Option' || c.level === 'Option';
+    const kind = isOption ? 'Option' : 'Digimon';
+    const level = isOption ? null : c.level;
+    const specialty = isOption ? null : c.specialty;
+    const isPartner = c.category === 'Partner';
+    const hp = isOption ? 0 : Number.parseInt(c.hp, 10) || 0;
+    const dp = isOption ? 0 : Number.parseInt(c.dp, 10) || 0;
+    const plusP = isOption ? 0 : Number.parseInt(c.plusP, 10) || 0;
+
+    const attacks = isOption
+      ? null
+      : {
+          circle: parseAttackString(c.circle, 'circle', c.no),
+          triangle: parseAttackString(c.triangle, 'triangle', c.no),
+          x: parseAttackString(c.x, 'x', c.no),
+        };
+
+    const supportText = fixMojibake((c.support || c.effect || 'None').trim());
+    const image = c.localIcon || `assets/cards/${c.no}_${name.replace(/[^A-Za-z0-9_-]/g, '_')}.jpg`;
+
+    return {
+      id,
+      no: String(c.no).padStart(3, '0'),
+      name,
+      kind,
+      level,
+      specialty,
+      isPartner,
+      hp,
+      dp,
+      plusP,
+      attacks,
+      supportText,
+      image,
+    };
+  });
+
+  // Sort by numeric ID 0..300
+  cards.sort((a, b) => a.id - b.id);
+
+  // Write src/data/cards.generated.ts
+  fs.mkdirSync(path.dirname(outTsPath), { recursive: true });
+  const header = `// AUTO-GENERATED by scripts/import-cards.mjs — DO NOT EDIT MANUALLY
+import type { CardData } from '../types/game';
+
+export const GENERATED_CARDS: readonly CardData[] = ${JSON.stringify(cards, null, 2)};
+`;
+  fs.writeFileSync(outTsPath, header, 'utf8');
+
+  // Copy assets to public/assets/{cards,ui,bg}
+  const srcAssets = path.join(guideRoot, 'assets');
+  const pubAssets = path.join(projectRoot, 'public', 'assets');
+
+  const cardsCopied = copyDirFiles(
+    path.join(srcAssets, 'cards'),
+    path.join(pubAssets, 'cards'),
+    (name) => /\.(jpe?g|png|webp|svg)$/i.test(name),
+  );
+  const uiCopied = copyDirFiles(
+    path.join(srcAssets, 'ui'),
+    path.join(pubAssets, 'ui'),
+    (name) => /\.(svg|png|gif|jpe?g|webp)$/i.test(name),
+  );
+  const bgCopied = copyDirFiles(
+    srcAssets,
+    path.join(pubAssets, 'bg'),
+    (name) => /\.(png|jpe?g|webp)$/i.test(name),
+  );
+
+  console.log(
+    `[import-cards] Wrote ${cards.length} cards to src/data/cards.generated.ts | Copied assets: ${cardsCopied} cards, ${uiCopied} ui, ${bgCopied} bg`,
+  );
+}
+
+main();
