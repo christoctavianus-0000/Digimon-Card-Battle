@@ -50,6 +50,8 @@ export interface BattleScreenProps {
   opponentName: string;
   opponentDeckName?: string;
   opponentAvatarCardId?: CardId;
+  opponentPreserveExactOrder?: boolean;
+  opponentDisableArmorOnCardIds?: CardId[];
   aiDifficulty: 'easy' | 'normal' | 'hard';
   engine: EngineApi;
   chooseAiAction: (
@@ -141,16 +143,34 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
   opponentName,
   opponentDeckName,
   opponentAvatarCardId,
+  opponentPreserveExactOrder,
+  opponentDisableArmorOnCardIds,
   aiDifficulty,
   engine,
   chooseAiAction,
   onExit,
 }) => {
+  const matchRulesConfig = useMemo(
+    () => ({
+      ...(opponentPreserveExactOrder ? { preserveDeckOrder: { opponent: true } } : {}),
+      ...(opponentDisableArmorOnCardIds && opponentDisableArmorOnCardIds.length > 0
+        ? { disableArmorOnCardIds: { opponent: opponentDisableArmorOnCardIds } }
+        : {}),
+    }),
+    [opponentPreserveExactOrder, opponentDisableArmorOnCardIds]
+  );
+
   // Initialize match state
   const [matchState, setMatchState] = useState<MatchState>(() =>
     engine.createMatch({
       playerDeck,
       opponentDeck,
+      config: {
+        ...(opponentPreserveExactOrder ? { preserveDeckOrder: { opponent: true } } : {}),
+        ...(opponentDisableArmorOnCardIds && opponentDisableArmorOnCardIds.length > 0
+          ? { disableArmorOnCardIds: { opponent: opponentDisableArmorOnCardIds } }
+          : {}),
+      },
     })
   );
 
@@ -245,6 +265,7 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
     const fresh = engine.createMatch({
       playerDeck,
       opponentDeck,
+      config: matchRulesConfig,
     });
     processedEventsCountRef.current = fresh.events.length;
     setBattleLogs(
@@ -255,7 +276,7 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
       }))
     );
     setMatchState(fresh);
-  }, [engine, playerDeck, opponentDeck]);
+  }, [engine, playerDeck, opponentDeck, matchRulesConfig]);
 
   // Auto-advance Clash Resolution Banner Queue on timer
   useEffect(() => {
@@ -319,6 +340,11 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
   const playerState = visibleState.players.player;
   const opponentState = visibleState.players.opponent;
   const avatarCard = opponentAvatarCardId !== undefined ? getCardById(opponentAvatarCardId) : undefined;
+  const hasActiveOptionModifier = Boolean(playerState.activeDigivolveModifier);
+  const activeOptionSourceCard =
+    playerState.activeDigivolveModifier?.sourceCardId !== undefined
+      ? getCardById(playerState.activeDigivolveModifier.sourceCardId)
+      : undefined;
 
   // Group player legal actions by type & handIndex
   const canPlayerSelectAttack = useMemo(
@@ -362,6 +388,100 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
     );
   }, [playerLegalActions, pendingOptionHandIndex]);
 
+  // Keyboard shortcuts for smooth combat controls
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (
+        inspectedCardId !== null ||
+        inspectedZone !== null ||
+        showRulesModal ||
+        showForfeitModal ||
+        visibleState.phase === 'gameOver'
+      ) {
+        return;
+      }
+
+      if (e.key === 'l' || e.key === 'L') {
+        e.preventDefault();
+        setShowLogDrawer((v) => !v);
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        if (pendingOptionHandIndex !== null) {
+          e.preventDefault();
+          setPendingOptionHandIndex(null);
+        } else if (showLogDrawer) {
+          e.preventDefault();
+          setShowLogDrawer(false);
+        }
+        return;
+      }
+
+      if (canPlayerSelectAttack && (e.key === '1' || e.key === '2' || e.key === '3')) {
+        const slotMap: Record<string, AttackSlot> = {
+          '1': 'circle',
+          '2': 'triangle',
+          '3': 'x',
+        };
+        const slot = slotMap[e.key];
+        const act = playerLegalActions.find(
+          (a) => a.type === 'chooseAttack' && a.slot === slot
+        );
+        if (act) {
+          e.preventDefault();
+          dispatchAction(act);
+        }
+        return;
+      }
+
+      if (e.key === ' ' || e.key === 'Enter') {
+        if (clashBanners.length > 0) {
+          e.preventDefault();
+          setClashBanners((prev) => prev.slice(1));
+          return;
+        }
+        if (visibleState.phase === 'digivolve' && endDigivolveAction) {
+          e.preventDefault();
+          dispatchAction(endDigivolveAction);
+          return;
+        }
+        if (visibleState.phase === 'supportSelect' && passSupportAction) {
+          e.preventDefault();
+          dispatchAction(passSupportAction);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [
+    inspectedCardId,
+    inspectedZone,
+    showRulesModal,
+    showForfeitModal,
+    visibleState.phase,
+    pendingOptionHandIndex,
+    showLogDrawer,
+    canPlayerSelectAttack,
+    playerLegalActions,
+    clashBanners.length,
+    endDigivolveAction,
+    passSupportAction,
+    dispatchAction,
+  ]);
+
   // Inspect stack helper
   const handleInspectStack = (side: PlayerSide) => {
     const digi = visibleState.players[side].battleDigimon;
@@ -389,6 +509,9 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
           ? 'Select a Level R or R P Rookie Digimon from your Hand to deploy to the Battle Arena!'
           : `Waiting for ${opponentName} to deploy their Rookie Digimon...`;
       case 'digivolve':
+        if (visibleState.activePlayer === 'player' && hasActiveOptionModifier) {
+          return `Digivolve Option Active (${activeOptionSourceCard?.name ?? 'Modifier'}): Click "▲ Option Digivolve" on a highlighted Digimon in your Hand!`;
+        }
         return visibleState.activePlayer === 'player' && playerLegalActions.length > 0
           ? 'Preparation Phase: Add up to 1 card to DP Slot (+P), use Digivolve Options, or Digivolve. Click "End Preparation" when ready!'
           : `${opponentName} is executing their Preparation / Digivolve Phase...`;
@@ -510,10 +633,10 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
             type="button"
             className={`ddcb-hud-btn ${showLogDrawer ? 'active' : ''}`}
             onClick={() => setShowLogDrawer((v) => !v)}
-            title="Toggle Battle Log Drawer"
+            title="Toggle Battle Log Drawer (Shortcut: L)"
           >
             <ScrollText size={14} />
-            <span>Log ({battleLogs.length})</span>
+            <span>Log ({battleLogs.length}) [L]</span>
           </button>
 
           <button
@@ -674,7 +797,9 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
                       ? 'VOIDED!'
                       : 'Card Set'
                     : visibleState.battle?.supportDecided?.opponent
-                    ? 'Passed'
+                    ? visibleState.battle?.supportDecided?.player
+                      ? 'Passed'
+                      : 'Locked In'
                     : 'Waiting'}
                 </strong>
               </div>
@@ -854,9 +979,10 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
                     type="button"
                     className="ddcb-phase-cta-btn"
                     onClick={() => dispatchAction(endDigivolveAction)}
+                    title="Shortcut: Space or Enter"
                   >
                     <Swords size={16} />
-                    <span>End Preparation → Battle Phase</span>
+                    <span>End Preparation → Battle Phase [Space]</span>
                     <ArrowRight size={16} />
                   </button>
                 )}
@@ -880,9 +1006,10 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
                           type="button"
                           className="ddcb-phase-cta-btn"
                           onClick={() => dispatchAction(passSupportAction)}
+                          title="Shortcut: Space or Enter"
                         >
                           <ArrowRight size={15} />
-                          <span>Pass Support</span>
+                          <span>Pass Support [Space]</span>
                         </button>
                       )}
                     </div>
@@ -896,15 +1023,17 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
                         (a) => a.type === 'chooseAttack' && a.slot === slot
                       );
                       if (!act) return null;
+                      const keyHint = slot === 'circle' ? '1' : slot === 'triangle' ? '2' : '3';
                       return (
                         <button
                           key={slot}
                           type="button"
                           className="ddcb-action-btn primary"
                           onClick={() => dispatchAction(act)}
+                          title={`Shortcut: ${keyHint}`}
                         >
                           <AttackSymbolSvg slot={slot} size={16} />
-                          <span>{slot === 'x' ? 'Cross' : slot}</span>
+                          <span>{slot === 'x' ? 'Cross' : slot} [{keyHint}]</span>
                         </button>
                       );
                     })}
@@ -943,8 +1072,9 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
                     type="button"
                     className="ddcb-hud-btn danger"
                     onClick={() => setPendingOptionHandIndex(null)}
+                    title="Shortcut: Escape"
                   >
-                    Cancel Option Target Selection
+                    Cancel Option Target Selection [Esc]
                   </button>
                 )}
                 {endDigivolveAction && (
@@ -952,8 +1082,9 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
                     type="button"
                     className="ddcb-phase-cta-btn"
                     onClick={() => dispatchAction(endDigivolveAction)}
+                    title="Shortcut: Space or Enter"
                   >
-                    <span>End Preparation → Battle Phase</span>
+                    <span>End Preparation → Battle Phase [Space]</span>
                     <ArrowRight size={15} />
                   </button>
                 )}
@@ -962,8 +1093,9 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
                     type="button"
                     className="ddcb-phase-cta-btn"
                     onClick={() => dispatchAction(passSupportAction)}
+                    title="Shortcut: Space or Enter"
                   >
-                    <span>Pass Support</span>
+                    <span>Pass Support [Space]</span>
                     <ArrowRight size={15} />
                   </button>
                 )}
@@ -996,10 +1128,15 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
                   (a) => a.type === 'playSupportFromHand' && a.handIndex === handIndex
                 );
 
-                // Check if this card is a valid target for a pending option card
+                // Check if this card is a valid target for a pending or active digivolve option card
                 const asTargetAction = targetedOptionActionsForPending.find(
                   (a) => a.targetHandIndex === handIndex
                 );
+                const isOptionTarget = Boolean(
+                  asTargetAction || (hasActiveOptionModifier && digivolveAct)
+                );
+                const dimNonOptionTarget =
+                  (pendingOptionHandIndex !== null || hasActiveOptionModifier) && !isOptionTarget;
 
                 const hasAnyAction = Boolean(
                   placeRookieAct ||
@@ -1015,8 +1152,9 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
                   <div
                     key={`${cardId}-${handIndex}`}
                     className={`ddcb-hand-card ${hasAnyAction ? 'has-legal-action' : ''} ${
-                      asTargetAction ? 'target-highlight' : ''
+                      isOptionTarget ? 'target-highlight' : ''
                     }`}
+                    style={dimNonOptionTarget ? { opacity: 0.58 } : undefined}
                   >
                     {/* Card Header & Artwork (Click to Inspect) */}
                     <div
@@ -1121,16 +1259,28 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
                               </button>
                             )}
 
-                            {digivolveAct && (
-                              <button
-                                type="button"
-                                className="ddcb-action-btn amber"
-                                onClick={() => dispatchAction(digivolveAct)}
-                              >
-                                <ChevronsUp size={14} />
-                                <span>▲ Digivolve (Cost: {card?.dp ?? 0} DP)</span>
-                              </button>
-                            )}
+                            {digivolveAct && (() => {
+                              const effectiveDpCost = playerState.activeDigivolveModifier?.ignoreDp
+                                ? 0
+                                : Math.max(
+                                    0,
+                                    (card?.dp ?? 0) -
+                                      (playerState.activeDigivolveModifier?.extraDp ?? 0)
+                                  );
+                              return (
+                                <button
+                                  type="button"
+                                  className="ddcb-action-btn amber"
+                                  onClick={() => dispatchAction(digivolveAct)}
+                                >
+                                  <ChevronsUp size={14} />
+                                  <span>
+                                    ▲ {hasActiveOptionModifier ? 'Option Digivolve' : 'Digivolve'}{' '}
+                                    (Cost: {effectiveDpCost} DP)
+                                  </span>
+                                </button>
+                              );
+                            })()}
 
                             {armorDigivolveAct && (
                               <button

@@ -248,6 +248,10 @@ export interface RulesConfig {
   allowPartnerCards?: boolean;
   /** Whether initial mulligan is enabled. */
   enableMulligan?: boolean;
+  /** Optional per-side flag to preserve exact 30-card deck order without shuffling on setup. */
+  preserveDeckOrder?: Partial<Record<PlayerSide, boolean>>;
+  /** Optional per-side list of Partner CardIds that are forbidden from Armor Digivolving (`[no armor]`). */
+  disableArmorOnCardIds?: Partial<Record<PlayerSide, readonly CardId[]>>;
 }
 
 export type WinReason = 'three_ko' | 'opponent_deck_out' | 'opponent_no_rookie';

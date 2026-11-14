@@ -12,11 +12,7 @@ import {
 } from 'lucide-react';
 import { chooseAiAction } from './ai';
 import { soundEngine } from './audio/soundEngine';
-import { BattleScreen } from './components/BattleScreen';
-import { CardBinder } from './components/CardBinder';
 import { ensureDigiviceUiStyles, getUiAssetUrl } from './components/CardView';
-import { DeckBuilder } from './components/DeckBuilder';
-import { OpponentSelect } from './components/OpponentSelect';
 import { RulesHelpModal } from './components/battle/BattleField';
 import { ALL_CARDS } from './data/cards';
 import { OPPONENTS, type AiDifficultyLevel, type OpponentDef } from './data/opponents';
@@ -45,6 +41,19 @@ import {
 } from './types/game';
 
 export type NavTab = 'arena' | 'deckbuilder' | 'codex';
+
+const BattleScreen = React.lazy(() =>
+  import('./components/BattleScreen').then((m) => ({ default: m.BattleScreen }))
+);
+const CardBinder = React.lazy(() =>
+  import('./components/CardBinder').then((m) => ({ default: m.CardBinder }))
+);
+const DeckBuilder = React.lazy(() =>
+  import('./components/DeckBuilder').then((m) => ({ default: m.DeckBuilder }))
+);
+const OpponentSelect = React.lazy(() =>
+  import('./components/OpponentSelect').then((m) => ({ default: m.OpponentSelect }))
+);
 
 interface ActiveMatchSession {
   opponent: OpponentDef;
@@ -404,36 +413,54 @@ export const App: React.FC = () => {
 
       {/* Main Content Stage */}
       <main className={`ddcb-main ${activeMatch ? 'ddcb-main--battle' : ''}`}>
-        {activeMatch ? (
-          <BattleScreen
-            playerDeck={activeMatch.playerDeck.cards}
-            opponentDeck={activeMatch.opponent.cards}
-            opponentName={activeMatch.opponent.name}
-            opponentDeckName={activeMatch.opponent.deckName}
-            opponentAvatarCardId={activeMatch.opponent.representativeCardId}
-            aiDifficulty={activeMatch.aiDifficulty}
-            engine={soundAwareEngine}
-            chooseAiAction={chooseAiAction}
-            onExit={handleExitMatch}
-          />
-        ) : activeTab === 'arena' ? (
-          <OpponentSelect
-            storeState={storeState}
-            onStoreChange={setStoreState}
-            onStartMatch={handleStartMatch}
-            onOpenDeckBuilder={() => {
-              soundEngine.playClick();
-              setActiveTab('deckbuilder');
-            }}
-          />
-        ) : activeTab === 'deckbuilder' ? (
-          <DeckBuilder
-            storeState={storeState}
-            onStoreChange={setStoreState}
-          />
-        ) : (
-          <CardBinder onAddCardToDeck={handleAddCardFromCodex} />
-        )}
+        <React.Suspense
+          fallback={
+            <div
+              className="ddcb-panel"
+              style={{
+                padding: '2rem',
+                textAlign: 'center',
+                color: 'var(--accent-cyan)',
+                fontFamily: 'var(--font-display)',
+              }}
+            >
+              Loading Digivice Module...
+            </div>
+          }
+        >
+          {activeMatch ? (
+            <BattleScreen
+              playerDeck={activeMatch.playerDeck.cards}
+              opponentDeck={activeMatch.opponent.cards}
+              opponentName={activeMatch.opponent.name}
+              opponentDeckName={activeMatch.opponent.deckName}
+              opponentAvatarCardId={activeMatch.opponent.representativeCardId}
+              opponentPreserveExactOrder={activeMatch.opponent.preserveExactOrder}
+              opponentDisableArmorOnCardIds={activeMatch.opponent.disableArmorOnCardIds}
+              aiDifficulty={activeMatch.aiDifficulty}
+              engine={soundAwareEngine}
+              chooseAiAction={chooseAiAction}
+              onExit={handleExitMatch}
+            />
+          ) : activeTab === 'arena' ? (
+            <OpponentSelect
+              storeState={storeState}
+              onStoreChange={setStoreState}
+              onStartMatch={handleStartMatch}
+              onOpenDeckBuilder={() => {
+                soundEngine.playClick();
+                setActiveTab('deckbuilder');
+              }}
+            />
+          ) : activeTab === 'deckbuilder' ? (
+            <DeckBuilder
+              storeState={storeState}
+              onStoreChange={setStoreState}
+            />
+          ) : (
+            <CardBinder onAddCardToDeck={handleAddCardFromCodex} />
+          )}
+        </React.Suspense>
       </main>
 
       {/* Global How to Play / Rules Modal */}

@@ -654,8 +654,9 @@ const SupportSlotBox: React.FC<{
   side: PlayerSide;
   supportCard: SupportSlotCard | null;
   decided?: boolean;
+  bothDecided?: boolean;
   onInspectCard: (cardId: CardId) => void;
-}> = ({ side, supportCard, decided, onInspectCard }) => {
+}> = ({ side, supportCard, decided, bothDecided, onInspectCard }) => {
   const label = side === 'player' ? 'YOUR SUPPORT SLOT' : 'OPPONENT SUPPORT SLOT';
 
   if (!supportCard) {
@@ -670,7 +671,11 @@ const SupportSlotBox: React.FC<{
         <div style={{ minWidth: 0, flex: 1 }}>
           <div className="ddcb-zone-label">{label}</div>
           <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', marginTop: 2 }}>
-            {decided ? 'Passed Support' : 'No Support Card Set'}
+            {decided
+              ? side === 'opponent' && !bothDecided
+                ? 'Support Decision Locked In'
+                : 'Passed Support'
+              : 'No Support Card Set'}
           </div>
         </div>
       </div>
@@ -749,6 +754,9 @@ export const CenterClashZone: React.FC<CenterClashZoneProps> = ({
     battle?.effectiveAttacks?.player ?? battle?.chosenAttacks?.player ?? null;
   const opponentAttack =
     battle?.effectiveAttacks?.opponent ?? battle?.chosenAttacks?.opponent ?? null;
+  const bothSupportsDecided = Boolean(
+    battle?.supportDecided?.player && battle?.supportDecided?.opponent
+  );
 
   return (
     <div className="ddcb-center-clash">
@@ -757,6 +765,7 @@ export const CenterClashZone: React.FC<CenterClashZoneProps> = ({
         side="opponent"
         supportCard={battle?.supportCards.opponent ?? null}
         decided={battle?.supportDecided?.opponent}
+        bothDecided={bothSupportsDecided}
         onInspectCard={onInspectCard}
       />
 
@@ -870,6 +879,7 @@ export const CenterClashZone: React.FC<CenterClashZoneProps> = ({
         side="player"
         supportCard={battle?.supportCards.player ?? null}
         decided={battle?.supportDecided?.player}
+        bothDecided={bothSupportsDecided}
         onInspectCard={onInspectCard}
       />
     </div>
@@ -1297,6 +1307,18 @@ export const BattleLogDrawer: React.FC<{
   opponentName: string;
   onClose: () => void;
 }> = ({ logs, opponentName, onClose }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyLogs = () => {
+    if (logs.length === 0) return;
+    const text = logs
+      .map((entry) => `[T${entry.turn}] ${describeGameEvent(entry.event, opponentName).text}`)
+      .join('\n');
+    navigator.clipboard?.writeText(text);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1800);
+  };
+
   return (
     <div className="ddcb-log-drawer">
       <div
@@ -1312,9 +1334,20 @@ export const BattleLogDrawer: React.FC<{
         <span style={{ fontWeight: 900, fontSize: '0.88rem', color: '#38bdf8' }}>
           DIGIVICE BATTLE LOG ({logs.length})
         </span>
-        <button type="button" className="ddcb-hud-btn" onClick={onClose}>
-          <X size={14} />
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <button
+            type="button"
+            className="ddcb-hud-btn"
+            disabled={logs.length === 0}
+            onClick={handleCopyLogs}
+            title="Copy chronological battle log to clipboard"
+          >
+            {copied ? 'Copied!' : 'Copy Log'}
+          </button>
+          <button type="button" className="ddcb-hud-btn" onClick={onClose}>
+            <X size={14} />
+          </button>
+        </div>
       </div>
       <div className="ddcb-log-list">
         {logs.length === 0 ? (

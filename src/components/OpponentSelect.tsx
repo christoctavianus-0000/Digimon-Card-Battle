@@ -108,6 +108,10 @@ export const OpponentSelect: React.FC<OpponentSelectProps> = ({
   const state = controlledState ?? internalState;
 
   const [tierFilter, setTierFilter] = useState<'All' | DifficultyTier>('All');
+  const [locationFilter, setLocationFilter] = useState<string>('All');
+  const [completionFilter, setCompletionFilter] = useState<'All' | 'Undefeated' | 'Defeated'>(
+    'All'
+  );
   const [search, setSearch] = useState('');
   const [selectedOpponentId, setSelectedOpponentId] = useState<string>(
     OPPONENTS[0]?.id ?? ''
@@ -116,17 +120,38 @@ export const OpponentSelect: React.FC<OpponentSelectProps> = ({
   const [showOpponentDeck, setShowOpponentDeck] = useState(false);
   const [inspectedCard, setInspectedCard] = useState<CardData | null>(null);
 
+  const arenaLocations = useMemo(() => {
+    const set = new Set<string>();
+    for (const opp of OPPONENTS) {
+      if (opp.location) set.add(opp.location);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, []);
+
+  const defeatedCount = useMemo(
+    () => OPPONENTS.filter((o) => (state.stats.byOpponent[o.id]?.wins ?? 0) > 0).length,
+    [state.stats.byOpponent]
+  );
+
   const filteredOpponents = useMemo(() => {
     const q = search.trim().toLowerCase();
     return OPPONENTS.filter((opp) => {
       if (tierFilter !== 'All' && opp.tier !== tierFilter) return false;
+      if (locationFilter !== 'All' && (opp.location ?? 'Unknown') !== locationFilter) {
+        return false;
+      }
+      const wins = state.stats.byOpponent[opp.id]?.wins ?? 0;
+      if (completionFilter === 'Defeated' && wins === 0) return false;
+      if (completionFilter === 'Undefeated' && wins > 0) return false;
       if (q) {
-        const hay = `${opp.name} ${opp.deckName} ${opp.colors} ${opp.location ?? ''}`.toLowerCase();
+        const hay = `${opp.name} ${opp.deckName} ${opp.colors} ${opp.location ?? ''} ${
+          opp.armorInfo ?? ''
+        }`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [tierFilter, search]);
+  }, [tierFilter, locationFilter, completionFilter, search, state.stats.byOpponent]);
 
   const selectedOpponent: OpponentDef = useMemo(
     () =>
@@ -259,6 +284,13 @@ export const OpponentSelect: React.FC<OpponentSelectProps> = ({
               </span>
               <span>
                 Draws: <strong>{state.stats.totalDraws}</strong>
+              </span>
+              <span>
+                Checklist:{' '}
+                <strong style={{ color: 'var(--accent-cyan)' }}>
+                  {defeatedCount}/{OPPONENTS.length}
+                </strong>{' '}
+                Defeated
               </span>
             </div>
           </div>
@@ -452,6 +484,35 @@ export const OpponentSelect: React.FC<OpponentSelectProps> = ({
               aria-label="Search opponents"
             />
           </div>
+
+          <select
+            className="ddcb-select"
+            style={{ padding: '6px 10px', fontSize: '0.8rem' }}
+            value={locationFilter}
+            onChange={(e) => setLocationFilter(e.target.value)}
+            aria-label="Filter by Arena Location"
+          >
+            <option value="All">All Arenas</option>
+            {arenaLocations.map((loc) => (
+              <option key={loc} value={loc}>
+                {loc}
+              </option>
+            ))}
+          </select>
+
+          <select
+            className="ddcb-select"
+            style={{ padding: '6px 10px', fontSize: '0.8rem' }}
+            value={completionFilter}
+            onChange={(e) =>
+              setCompletionFilter(e.target.value as 'All' | 'Undefeated' | 'Defeated')
+            }
+            aria-label="Filter by Completion Status"
+          >
+            <option value="All">All Duelists</option>
+            <option value="Undefeated">Undefeated Only</option>
+            <option value="Defeated">Defeated (✓)</option>
+          </select>
 
           {/* AI Difficulty Override */}
           <div
@@ -709,6 +770,33 @@ export const OpponentSelect: React.FC<OpponentSelectProps> = ({
                       <span>{selectedOpponent.location}</span>
                     </span>
                   )}
+                  {selectedOpponent.preserveExactOrder && (
+                    <span
+                      className="ddcb-badge"
+                      title="This boss draws cards in a fixed canonical order without shuffling"
+                      style={{
+                        background: 'rgba(245, 158, 11, 0.16)',
+                        border: '1px solid rgba(245, 158, 11, 0.45)',
+                        color: '#fbbf24',
+                      }}
+                    >
+                      FIXED DECK ORDER
+                    </span>
+                  )}
+                  {selectedOpponent.disableArmorOnCardIds &&
+                    selectedOpponent.disableArmorOnCardIds.length > 0 && (
+                      <span
+                        className="ddcb-badge"
+                        title="Partner cards in this deck cannot Armor Digivolve"
+                        style={{
+                          background: 'rgba(168, 85, 247, 0.16)',
+                          border: '1px solid rgba(168, 85, 247, 0.45)',
+                          color: '#d8b4fe',
+                        }}
+                      >
+                        NO ARMOR DIGIVOLVE
+                      </span>
+                    )}
                 </div>
 
                 <h3
@@ -839,16 +927,56 @@ export const OpponentSelect: React.FC<OpponentSelectProps> = ({
                 </div>
                 <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
                   Signature:{' '}
-                  <strong style={{ color: 'var(--text-primary)' }}>
-                    {signatureCard ? `#${signatureCard.no} ${signatureCard.name}` : 'Unknown'}
-                  </strong>
+                  {signatureCard ? (
+                    <button
+                      type="button"
+                      onClick={() => setInspectedCard(signatureCard)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: 0,
+                        font: 'inherit',
+                        fontWeight: 700,
+                        color: 'var(--text-primary)',
+                        cursor: 'pointer',
+                        textDecoration: 'underline',
+                        textDecorationColor: 'rgba(56, 189, 248, 0.5)',
+                      }}
+                    >
+                      #{signatureCard.no} {signatureCard.name}
+                    </button>
+                  ) : (
+                    <strong style={{ color: 'var(--text-primary)' }}>Unknown</strong>
+                  )}
                   {armorCard && (
                     <span>
                       {' '}
-                      • Armor: <strong style={{ color: '#fbbf24' }}>{armorCard.name}</strong>
+                      • Armor:{' '}
+                      <button
+                        type="button"
+                        onClick={() => setInspectedCard(armorCard)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          padding: 0,
+                          font: 'inherit',
+                          fontWeight: 700,
+                          color: '#fbbf24',
+                          cursor: 'pointer',
+                          textDecoration: 'underline',
+                          textDecorationColor: 'rgba(251, 191, 36, 0.5)',
+                        }}
+                      >
+                        #{armorCard.no} {armorCard.name}
+                      </button>
                     </span>
                   )}
                 </div>
+                {selectedOpponent.armorInfo && (
+                  <div style={{ fontSize: '0.73rem', color: '#94a3b8' }}>
+                    Armor Intel: {selectedOpponent.armorInfo}
+                  </div>
+                )}
               </div>
             </div>
 

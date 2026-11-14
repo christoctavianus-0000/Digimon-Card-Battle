@@ -154,6 +154,13 @@ export const DeckBuilder: React.FC<DeckBuilderProps> = ({
     message: string;
   } | null>(null);
 
+  // Auto-Fill specialty preference & Sample Opening Hand Simulator
+  const [autoFillSpecialty, setAutoFillSpecialty] = useState<'Auto' | Specialty>('Auto');
+  const [isHandSimOpen, setIsHandSimOpen] = useState(false);
+  const [simHand, setSimHand] = useState<CardId[]>([]);
+  const [simMulliganUsed, setSimMulliganUsed] = useState(false);
+  const [simDrawCount, setSimDrawCount] = useState(0);
+
   // Analytics & Validation for currentDeck
   const validation = useMemo(
     () => validateDeck(currentDeck?.cards ?? []),
@@ -322,6 +329,34 @@ export const DeckBuilder: React.FC<DeckBuilderProps> = ({
   const handleClearDeck = () => {
     if (!currentDeck) return;
     handleUpdateCurrentCards([]);
+  };
+
+  const dealSampleHand = (isMulligan: boolean) => {
+    const pool = [...(currentDeck?.cards ?? [])];
+    if (pool.length < 4) return;
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = pool[i]!;
+      pool[i] = pool[j]!;
+      pool[j] = tmp;
+    }
+    const hand = pool.slice(0, 4);
+    const online = pool.slice(4);
+    const isRookie = (id: CardId): boolean => {
+      const card = getCardById(id);
+      return Boolean(card && card.kind === 'Digimon' && (card.level === 'R' || card.level === 'R P'));
+    };
+    if (!hand.some(isRookie)) {
+      const rookieIdx = online.findIndex(isRookie);
+      if (rookieIdx >= 0) {
+        const rookieId = online[rookieIdx]!;
+        online[rookieIdx] = hand[0]!;
+        hand[0] = rookieId;
+      }
+    }
+    setSimHand(hand);
+    setSimMulliganUsed(isMulligan);
+    setSimDrawCount((c) => (isMulligan ? c : c + 1));
   };
 
   const handleLoadBaseDeck = (target: 'current' | 'new') => {
@@ -521,14 +556,43 @@ export const DeckBuilder: React.FC<DeckBuilderProps> = ({
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <select
+                className="ddcb-select"
+                style={{ padding: '4px 8px', fontSize: '0.78rem' }}
+                value={autoFillSpecialty}
+                onChange={(e) => setAutoFillSpecialty(e.target.value as 'Auto' | Specialty)}
+                aria-label="Auto-Fill Specialty Preference"
+              >
+                <option value="Auto">Auto Specialty</option>
+                <option value="Fire">Fire</option>
+                <option value="Ice">Ice</option>
+                <option value="Nature">Nature</option>
+                <option value="Darkness">Darkness</option>
+                <option value="Rare">Rare</option>
+              </select>
               <button
                 type="button"
                 className="ddcb-btn ddcb-btn--sm"
-                onClick={() => handleAutoFill()}
+                onClick={() =>
+                  handleAutoFill(autoFillSpecialty === 'Auto' ? undefined : autoFillSpecialty)
+                }
                 title="Automatically complete deck to 30 cards with balanced curve"
               >
                 <Wand2 size={14} />
                 <span>Auto-Fill (30)</span>
+              </button>
+              <button
+                type="button"
+                className="ddcb-btn ddcb-btn--sm"
+                disabled={(currentDeck?.cards.length ?? 0) < 4}
+                onClick={() => {
+                  dealSampleHand(false);
+                  setIsHandSimOpen(true);
+                }}
+                title="Simulate a 4-card opening draw and Mulligan check"
+              >
+                <Sparkles size={14} />
+                <span>Test Hand (4)</span>
               </button>
               <button
                 type="button"
@@ -1527,6 +1591,150 @@ export const DeckBuilder: React.FC<DeckBuilderProps> = ({
           </div>
         </div>
       )}
+
+      {/* Modal 3: Sample Opening Hand Simulator */}
+      {isHandSimOpen && (() => {
+        const simCards = simHand
+          .map((id) => getCardById(id))
+          .filter((c): c is CardData => Boolean(c));
+        const rookieCount = simCards.filter(
+          (c) => c.kind === 'Digimon' && (c.level === 'R' || c.level === 'R P')
+        ).length;
+        const champArmorCount = simCards.filter(
+          (c) => c.kind === 'Digimon' && (c.level === 'C' || c.level === 'A')
+        ).length;
+        const ultimateCount = simCards.filter(
+          (c) => c.kind === 'Digimon' && c.level === 'U'
+        ).length;
+        const optionCount = simCards.filter((c) => c.kind === 'Option').length;
+        const maxPlusP = simCards.reduce(
+          (max, c) => (c.kind === 'Digimon' ? Math.max(max, c.plusP) : max),
+          0
+        );
+        return (
+          <div
+            className="ddcb-modal-backdrop"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Sample Opening Hand Simulator"
+            onClick={() => setIsHandSimOpen(false)}
+          >
+            <div
+              className="ddcb-modal-dialog"
+              style={{ maxWidth: '880px' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: '12px',
+                  paddingBottom: '10px',
+                  borderBottom: '1px solid rgba(56, 189, 248, 0.25)',
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontFamily: 'var(--font-display)',
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      letterSpacing: '0.1em',
+                      color: 'var(--accent-cyan)',
+                    }}
+                  >
+                    OPENING HAND SIMULATOR // TEST #{simDrawCount}
+                    {simMulliganUsed ? ' (MULLIGAN)' : ''}
+                  </div>
+                  <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.25rem', margin: 0 }}>
+                    {currentDeck?.name} — 4-Card Opening Draw
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  className="ddcb-btn ddcb-btn--sm"
+                  onClick={() => setIsHandSimOpen(false)}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  flexWrap: 'wrap',
+                  marginBottom: '14px',
+                  fontSize: '0.78rem',
+                }}
+              >
+                <span className="ddcb-badge ddcb-badge--level">Rookies (R/R P): {rookieCount}</span>
+                <span className="ddcb-badge ddcb-badge--level">Champ/Armor (C/A): {champArmorCount}</span>
+                <span className="ddcb-badge ddcb-badge--level">Ultimate (U): {ultimateCount}</span>
+                <span className="ddcb-badge ddcb-badge--spec spec-option">Options: {optionCount}</span>
+                <span className="ddcb-badge" style={{ color: '#34d399', borderColor: 'rgba(16, 185, 129, 0.4)' }}>
+                  Max +P in Hand: +{maxPlusP}P
+                </span>
+              </div>
+
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                  gap: '10px',
+                  marginBottom: '16px',
+                }}
+              >
+                {simCards.map((card, idx) => (
+                  <CardView
+                    key={`${card.id}-${idx}`}
+                    card={card}
+                    size="compact"
+                    showSupport
+                    onClick={() => setInspectedCard(card)}
+                    onInspect={(c) => setInspectedCard(c)}
+                  />
+                ))}
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  gap: '8px',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <button
+                  type="button"
+                  className="ddcb-btn ddcb-btn--amber"
+                  disabled={simMulliganUsed}
+                  onClick={() => dealSampleHand(true)}
+                >
+                  <span>Simulate Mulligan (Redraw 4)</span>
+                </button>
+                <button
+                  type="button"
+                  className="ddcb-btn ddcb-btn--primary"
+                  onClick={() => dealSampleHand(false)}
+                >
+                  <Sparkles size={15} />
+                  <span>Deal New Opening Hand</span>
+                </button>
+                <button
+                  type="button"
+                  className="ddcb-btn"
+                  onClick={() => setIsHandSimOpen(false)}
+                >
+                  <span>Close</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Card Inspector Modal */}
       {inspectedCard && (

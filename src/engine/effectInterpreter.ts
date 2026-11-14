@@ -1220,7 +1220,7 @@ export function executeSingleOp(
       const effectDef = resolveCardEffectDef(topCardId, ctx.effectRegistry);
       if (effectDef && (effectDef.timing === 'support' || effectDef.timing === 'both')) {
         ctx.recursionDepth = depth + 1;
-        executeEffectOps(effectDef.ops, ctx, options);
+        executeEffectOps(effectDef.ops, ctx);
         ctx.recursionDepth = depth;
       }
       break;

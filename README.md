@@ -21,7 +21,7 @@ All **301 canonical cards (#000–#300)** and all **138 canonical GameFAQs oppon
 - Parsed directly from the canonical GameFAQs *Base Deck List* (`docs/base-deck-list..txt`).
 - Includes all **138 duelist decks** across Beginner City, Flame City, Jungle City, Igloo City, Junk City, Dark City, Sky City, Wiseman Tower, and Infinity Tower (Betamon, Agumon, Veemon, Wormmon, Myotismon, VenomMyotismon, Apokarimon, Analogman's fixed-order *Darkness Wave Deck*, Rosemon, Seraphimon, Diaboromon, and more).
 - Curated **26 Starter & Partner Preset Decks** for instant one-click loading in the Deck Builder.
-- Categorized into **Easy**, **Normal**, **Hard**, and **Expert** tiers, with per-opponent win/loss/streak tracking persisted in `localStorage`.
+- Categorized into **Easy**, **Normal**, **Hard**, and **Expert** tiers, with Arena Location & Completion Status filters (`X/138 Defeated`), special-rule badges (`FIXED DECK ORDER`, `NO ARMOR DIGIVOLVE`), Partner `armorInfo` previews, and per-opponent win/loss/streak tracking persisted in `localStorage`.
 
 ### 3. 1:1 PS1 Battle Engine (`src/engine/`)
 - **Zones**: Online Deck (30 cards), Hand (drawn up to 4 cards), Active Digimon Battle Slot (with full Digivolution Stack underneath), DP Slot (persists across KOs!), Support Slot, Offline Pile, and 3-KO Scoreboard.
@@ -52,10 +52,15 @@ All **301 canonical cards (#000–#300)** and all **138 canonical GameFAQs oppon
 - **Normal AI**: Tactical duelist that plans DP accumulation toward Champion/Ultimate evolutions in hand and evaluates expected combat trades.
 - **Hard AI**: Master lookahead duelist that computes full `3 × 3` Circle/Triangle/Cross payoff matrices (accounting for Counter traps, Attack-to-0, Foe ×3, Crash, Eat-Up HP, and Support cards) to maximize KO probability and survival.
 
-### 5. Deck Builder, Card Codex & Procedural Web Audio (`src/components/`, `src/audio/`)
-- **Deck Builder**: Manage multiple saved 30-card decks, enforce PS1 copy limits (max 4 per standard card, max 1 per Partner `R P`, max 3 total Partners, ≥1 Rookie), view live Specialty & Level curves, auto-complete partial decks, load any of the 138 canonical base decks, and import/export shareable `DDCB1:...` deck codes or JSON.
+### 5. Deck Builder, Card Codex, Battle UX & Procedural Web Audio (`src/components/`, `src/audio/`)
+- **Deck Builder**: Manage multiple saved 30-card decks, enforce PS1 copy limits (max 4 per standard card, max 1 per Partner `R P`, max 3 total Partners, ≥1 Rookie), view live Specialty & Level curves, use the **Specialty Auto-Fill** picker and **4-Card Opening Hand Simulator**, load any of the 138 canonical base decks, and import/export shareable `DDCB1:...` deck codes or JSON.
+- **Battle Screen & Arena UX**: Supports keyboard shortcuts (`1`/`2`/`3` attacks & slots, `Space`/`Enter` confirm, `L` log drawer, `Esc` close/cancel), one-click **Copy Log** export, active Option target highlighting with effective DP cost previews, and strict visible-state masking (`getVisibleState`).
 - **Card Codex (Binder)**: Browse all 301 cards in Grid or Matrix Table views, filter by Specialty/Level/Text/X-Effect, sort by any stat, and inspect full card modals with Partner ↔ Armor lineage links.
 - **Procedural Sound Engine**: Zero-asset Web Audio API synthesizer generating PS1 Digivice clicks, card draws, DP charges, Digivolution arpeggios, Armor crest chimes, laser/heavy hits, Counter alarms, KO explosions, and Victory/Defeat fanfares.
+
+### 6. Quality Assurance & Bundle Optimization
+- **Automated Test Suite (`npx vitest run`)**: **8 test files / 95 tests** covering card & opponent parsing, rules invariants (`bugfixes.test.ts`), Substep 3B `voidSupport` isolation, `notInAbnormal` checks, AI-vs-AI simulations (`Hard` vs `Easy`), and `localStorage` persistence.
+- **Code-Splitting (`vite.config.ts` & `src/App.tsx`)**: Routes heavy sub-views via `React.lazy` + `Suspense` with `manualChunks` (`vendor-react`, `vendor-icons`, `data-decks`, `data-cards`), keeping production bundles clean with zero `> 500 kB` chunk warnings.
 
 ---
 

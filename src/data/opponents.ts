@@ -84,6 +84,8 @@ export interface OpponentDef {
   location?: string;
   /** Partner Armor card ID if the opponent uses an Armor evolution in this deck. */
   armorCardId?: CardId;
+  /** Raw Armor evolution stats description line if present. */
+  armorInfo?: string;
   /** Partner card IDs that explicitly have `[no armor]` / `--- no armor` in this deck. */
   disableArmorOnCardIds?: CardId[];
   /** True if the opponent's deck order is fixed (Analogman). */
@@ -118,6 +120,7 @@ function toOpponentDef(deck: GeneratedBaseDeck): OpponentDef {
     quote: deck.description,
     ...(deck.location ? { location: deck.location } : {}),
     ...(typeof deck.armorCardId === 'number' ? { armorCardId: deck.armorCardId } : {}),
+    ...(deck.armorInfo ? { armorInfo: deck.armorInfo } : {}),
     ...(deck.disableArmorOnCardIds ? { disableArmorOnCardIds: deck.disableArmorOnCardIds } : {}),
     ...(deck.preserveExactOrder ? { preserveExactOrder: true } : {}),
   };

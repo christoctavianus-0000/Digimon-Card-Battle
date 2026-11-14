@@ -239,7 +239,7 @@ export function resolveBattle(state: MatchState, effectRegistry?: EffectRegistry
         effectRegistry,
         sourceCardId: sup.cardId,
       });
-      executeEffectOps(effectDef.ops, ctx);
+      executeEffectOps(effectDef.ops, ctx, { skipVoidSupport: true });
     }
   }
 
