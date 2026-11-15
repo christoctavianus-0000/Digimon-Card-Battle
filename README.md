@@ -2,6 +2,9 @@
 
 A faithful, self-contained 1:1 web recreation of the tactical card battle system from **Digimon Digital Card Battle** (*Digimon World: Digital Card Arena* on PlayStation 1), built with **React 18**, **TypeScript**, **Vite 5**, and **Vitest**.
 
+### Play Live
+**[https://christoctavianus-0000.github.io/Digimon-Card-Battle/](https://christoctavianus-0000.github.io/Digimon-Card-Battle/)**
+
 All **301 canonical cards (#000–#300)** and all **138 canonical GameFAQs opponent & starter decks** are unlocked from the start, with a full Effect DSL interpreter, 3-tier fair-information AI opponents, full Deck Builder with import/export, Card Codex Binder, and a procedural Web Audio API sound synthesizer.
 
 ---
