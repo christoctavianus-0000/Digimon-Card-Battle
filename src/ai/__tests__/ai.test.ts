@@ -156,7 +156,7 @@ describe('AI Engine (Easy, Normal, Hard)', () => {
   });
 
   describe('3. Tactical Heuristics & Multi-Step Planning (Normal & Hard AI)', () => {
-    it('prioritizes 0-DP Armor Digivolution when Partner Rookie and matching Armor are present', () => {
+    it('prioritizes 0-DP Armor Evolution when deploying a Partner Rookie in rookiePlacement', () => {
       const veemon = getCardByName('Veemon')!;
       const flamedramon = getCardByName('Flamedramon')!;
       const agumon = getCardByName('Agumon')!;
@@ -168,24 +168,21 @@ describe('AI Engine (Easy, Normal, Hard)', () => {
         firstPlayer: 'player',
       });
 
-      state.phase = 'digivolve';
+      state.phase = 'rookiePlacement';
       state.activePlayer = 'player';
-      state.players.player.battleDigimon = {
-        cardId: veemon.id,
-        stack: [],
-        currentHp: veemon.hp,
-        maxHp: veemon.hp,
-        effectiveSpecialty: veemon.specialty!,
-      };
-      state.players.player.hand = [agumon.id, flamedramon.id];
+      state.players.player.battleDigimon = null;
+      state.players.player.hand = [veemon.id, agumon.id];
       state.players.player.dpSlot = [agumon.id];
       state.players.player.dpTotal = agumon.plusP;
 
+      const expectedVeemonArmors = new Set([flamedramon.id, 173, 185]);
       for (const diff of ['normal', 'hard'] as const) {
         const action = chooseAiAction(state, 'player', diff);
-        expect(action.type).toBe('armorDigivolve');
-        if (action.type === 'armorDigivolve') {
-          expect(action.handIndex).toBe(1);
+        expect(action.type).toBe('placeRookie');
+        if (action.type === 'placeRookie') {
+          expect(action.handIndex).toBe(0);
+          expect(action.armorCardId).toBeDefined();
+          expect(expectedVeemonArmors.has(action.armorCardId!)).toBe(true);
         }
       }
     });

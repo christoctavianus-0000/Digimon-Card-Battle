@@ -473,7 +473,11 @@ export const CardView: React.FC<CardViewProps> = ({
           {badgeValue !== undefined && (
             <span
               className={`ddcb-card__count-pill ${
-                badgeValue === 0 || badgeValue === '×0' || badgeValue === '0/4'
+                badgeValue === 0 ||
+                badgeValue === '×0' ||
+                badgeValue === '0/4' ||
+                badgeValue === '0/0' ||
+                badgeValue === 'Evo Only'
                   ? 'is-zero'
                   : ''
               }`}

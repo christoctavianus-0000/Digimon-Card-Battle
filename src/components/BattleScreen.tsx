@@ -190,6 +190,8 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
 
   // Option target selection state (when a Digivolve Option requires targetHandIndex)
   const [pendingOptionHandIndex, setPendingOptionHandIndex] = useState<number | null>(null);
+  // Partner Rookie deployment choice modal state (Normal Rookie vs Armor Evolution)
+  const [pendingPartnerHandIndex, setPendingPartnerHandIndex] = useState<number | null>(null);
 
   // Persistent Battle Log & Clash Resolution Banner Queue
   const logIdCounter = useRef(1);
@@ -223,6 +225,7 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
   const dispatchAction = useCallback(
     (action: Action) => {
       setPendingOptionHandIndex(null);
+      setPendingPartnerHandIndex(null);
       setMatchState((prev) => {
         const next = engine.applyAction(prev, action);
 
@@ -261,6 +264,7 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
   // Rematch handler
   const handleRematch = useCallback(() => {
     setPendingOptionHandIndex(null);
+    setPendingPartnerHandIndex(null);
     setClashBanners([]);
     const fresh = engine.createMatch({
       playerDeck,
@@ -357,6 +361,11 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
     [playerLegalActions]
   );
 
+  const hasDigivolveTargets = useMemo(
+    () => playerLegalActions.some((a) => a.type === 'digivolve'),
+    [playerLegalActions]
+  );
+
   const playBlindSupportAction = useMemo(
     () => playerLegalActions.find((a) => a.type === 'playSupportFromDeckTop'),
     [playerLegalActions]
@@ -419,13 +428,20 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
       }
 
       if (e.key === 'Escape') {
-        if (pendingOptionHandIndex !== null) {
+        if (pendingPartnerHandIndex !== null) {
+          e.preventDefault();
+          setPendingPartnerHandIndex(null);
+        } else if (pendingOptionHandIndex !== null) {
           e.preventDefault();
           setPendingOptionHandIndex(null);
         } else if (showLogDrawer) {
           e.preventDefault();
           setShowLogDrawer(false);
         }
+        return;
+      }
+
+      if (pendingPartnerHandIndex !== null) {
         return;
       }
 
@@ -473,6 +489,7 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
     showForfeitModal,
     visibleState.phase,
     pendingOptionHandIndex,
+    pendingPartnerHandIndex,
     showLogDrawer,
     canPlayerSelectAttack,
     playerLegalActions,
@@ -496,6 +513,9 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
 
   // Phase instruction banner text
   const getPhaseInstruction = (): string => {
+    if (pendingPartnerHandIndex !== null) {
+      return 'Partner Deployment: Choose to deploy as a Normal Rookie (evolves to C/U) or Armor Evolve immediately for 0 DP!';
+    }
     if (pendingOptionHandIndex !== null) {
       return 'Select a target card in your Hand to apply the Digivolve Option, or click Cancel.';
     }
@@ -506,11 +526,13 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
           : `Waiting for ${opponentName} to complete Mulligan...`;
       case 'rookiePlacement':
         return playerLegalActions.length > 0
-          ? 'Select a Level R or R P Rookie Digimon from your Hand to deploy to the Battle Arena!'
+          ? 'Select a Level R or R P Rookie Digimon from your Hand to deploy (Partner R P cards offer Armor Evolution!).'
           : `Waiting for ${opponentName} to deploy their Rookie Digimon...`;
       case 'digivolve':
         if (visibleState.activePlayer === 'player' && hasActiveOptionModifier) {
-          return `Digivolve Option Active (${activeOptionSourceCard?.name ?? 'Modifier'}): Click "▲ Option Digivolve" on a highlighted Digimon in your Hand!`;
+          return hasDigivolveTargets
+            ? `Digivolve Option Active (${activeOptionSourceCard?.name ?? 'Modifier'}): Click "▲ Option Digivolve" on a highlighted Digimon in your Hand!`
+            : `Digivolve Option Active (${activeOptionSourceCard?.name ?? 'Modifier'}): No valid targets in Hand — add DP or click "End Preparation" (Option discarded).`;
         }
         return visibleState.activePlayer === 'player' && playerLegalActions.length > 0
           ? 'Preparation Phase: Add up to 1 card to DP Slot (+P), use Digivolve Options, or Digivolve. Click "End Preparation" when ready!'
@@ -1108,17 +1130,17 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
                 const card = getCardById(cardId);
 
                 // Find all legal actions for this handIndex
-                const placeRookieAct = playerLegalActions.find(
-                  (a) => a.type === 'placeRookie' && a.handIndex === handIndex
+                const placeRookieActs = playerLegalActions.filter(
+                  (a): a is Extract<Action, { type: 'placeRookie' }> =>
+                    a.type === 'placeRookie' && a.handIndex === handIndex
                 );
+                const normalRookieAct = placeRookieActs.find((a) => a.armorCardId === undefined);
+                const armorPlaceActs = placeRookieActs.filter((a) => a.armorCardId !== undefined);
                 const addToDpAct = playerLegalActions.find(
                   (a) => a.type === 'addToDp' && a.handIndex === handIndex
                 );
                 const digivolveAct = playerLegalActions.find(
                   (a) => a.type === 'digivolve' && a.handIndex === handIndex
-                );
-                const armorDigivolveAct = playerLegalActions.find(
-                  (a) => a.type === 'armorDigivolve' && a.handIndex === handIndex
                 );
                 const optionActs = playerLegalActions.filter(
                   (a): a is Extract<Action, { type: 'useDigivolveOption' }> =>
@@ -1136,13 +1158,14 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
                   asTargetAction || (hasActiveOptionModifier && digivolveAct)
                 );
                 const dimNonOptionTarget =
-                  (pendingOptionHandIndex !== null || hasActiveOptionModifier) && !isOptionTarget;
+                  (pendingOptionHandIndex !== null ||
+                    (hasActiveOptionModifier && hasDigivolveTargets)) &&
+                  !isOptionTarget;
 
                 const hasAnyAction = Boolean(
-                  placeRookieAct ||
+                  placeRookieActs.length > 0 ||
                     addToDpAct ||
                     digivolveAct ||
-                    armorDigivolveAct ||
                     optionActs.length > 0 ||
                     playSupportAct ||
                     asTargetAction
@@ -1237,14 +1260,35 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
                           ) : null
                         ) : (
                           <>
-                            {placeRookieAct && (
+                            {placeRookieActs.length > 0 && (
                               <button
                                 type="button"
-                                className="ddcb-action-btn emerald"
-                                onClick={() => dispatchAction(placeRookieAct)}
+                                className={`ddcb-action-btn ${
+                                  armorPlaceActs.length > 0 ? 'purple' : 'emerald'
+                                }`}
+                                onClick={() => {
+                                  if (armorPlaceActs.length > 0) {
+                                    setPendingPartnerHandIndex(handIndex);
+                                  } else if (normalRookieAct) {
+                                    dispatchAction(normalRookieAct);
+                                  } else if (placeRookieActs[0]) {
+                                    dispatchAction(placeRookieActs[0]);
+                                  }
+                                }}
                               >
-                                <ChevronsUp size={14} />
-                                <span>Deploy Rookie to Arena</span>
+                                {armorPlaceActs.length > 0 ? (
+                                  <>
+                                    <Sparkles size={13} />
+                                    <span>
+                                      Deploy Partner ({armorPlaceActs.length} Armor / Rookie)
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <ChevronsUp size={14} />
+                                    <span>Deploy Rookie to Arena</span>
+                                  </>
+                                )}
                               </button>
                             )}
 
@@ -1281,17 +1325,6 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
                                 </button>
                               );
                             })()}
-
-                            {armorDigivolveAct && (
-                              <button
-                                type="button"
-                                className="ddcb-action-btn purple"
-                                onClick={() => dispatchAction(armorDigivolveAct)}
-                              >
-                                <Sparkles size={13} />
-                                <span>★ Armor Digivolve (0 DP)</span>
-                              </button>
-                            )}
 
                             {optionActs.length > 0 && (
                               <button
@@ -1474,6 +1507,215 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
           onClose={() => setShowLogDrawer(false)}
         />
       )}
+
+      {pendingPartnerHandIndex !== null &&
+        (() => {
+          const partnerCardId = playerState.hand[pendingPartnerHandIndex];
+          const partnerCard = partnerCardId !== undefined ? getCardById(partnerCardId) : undefined;
+          const placeChoices = playerLegalActions.filter(
+            (a): a is Extract<Action, { type: 'placeRookie' }> =>
+              a.type === 'placeRookie' && a.handIndex === pendingPartnerHandIndex
+          );
+          const normalChoice = placeChoices.find((a) => a.armorCardId === undefined);
+          const armorChoices = placeChoices.filter((a) => a.armorCardId !== undefined);
+
+          if (!partnerCard || placeChoices.length === 0) return null;
+
+          return (
+            <div
+              className="ddcb-modal-backdrop"
+              onClick={() => setPendingPartnerHandIndex(null)}
+            >
+              <div
+                className="ddcb-modal-card"
+                style={{ maxWidth: 680, width: '92vw' }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                    paddingBottom: '0.65rem',
+                    marginBottom: '0.85rem',
+                    borderBottom: '1px solid #2b4c85',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <Sparkles size={20} color="#c084fc" />
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 900 }}>
+                        Deploy Partner — #{partnerCard.no} {partnerCard.name}
+                      </h3>
+                      <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                        Choose to deploy as a Normal Rookie (evolves into {partnerCard.specialty} C / U)
+                        or Armor Evolve immediately for 0 DP (keeps DP Slot).
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="ddcb-hud-btn"
+                    onClick={() => setPendingPartnerHandIndex(null)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))',
+                    gap: '0.75rem',
+                  }}
+                >
+                  {normalChoice && (
+                    <div
+                      style={{
+                        border: '1px solid rgba(52, 211, 153, 0.45)',
+                        background: 'rgba(15, 23, 42, 0.85)',
+                        borderRadius: 10,
+                        padding: '0.7rem',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        gap: '0.55rem',
+                      }}
+                    >
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                        <div style={{ width: 52, height: 64, flexShrink: 0, borderRadius: 6, overflow: 'hidden' }}>
+                          <CardArtwork card={partnerCard} />
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 800, fontSize: '0.88rem', color: '#6ee7b7' }}>
+                            Normal Rookie (Lv. R P)
+                          </div>
+                          <div style={{ fontSize: '0.8rem', fontWeight: 700 }}>
+                            #{partnerCard.no} {partnerCard.name}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                            <SpecialtyBadge specialty={partnerCard.specialty} />
+                            <span className="ddcb-mini-badge hp">HP {partnerCard.hp}</span>
+                          </div>
+                        </div>
+                      </div>
+                      {partnerCard.attacks && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            padding: '0.25rem 0.5rem',
+                            borderRadius: 6,
+                            background: 'rgba(5, 10, 24, 0.75)',
+                            fontSize: '0.75rem',
+                            fontFamily: 'monospace',
+                          }}
+                        >
+                          <span>
+                            <AttackSymbolSvg slot="circle" size={12} /> {partnerCard.attacks.circle.power}
+                          </span>
+                          <span>
+                            <AttackSymbolSvg slot="triangle" size={12} /> {partnerCard.attacks.triangle.power}
+                          </span>
+                          <span>
+                            <AttackSymbolSvg slot="x" size={12} /> {partnerCard.attacks.x.power}
+                          </span>
+                        </div>
+                      )}
+                      <div style={{ fontSize: '0.74rem', color: '#cbd5e1' }}>
+                        Stays Level R P; can Digivolve normally into {partnerCard.specialty} Champion (C) &amp;
+                        Ultimate (U) in the Preparation Phase.
+                      </div>
+                      <button
+                        type="button"
+                        className="ddcb-action-btn emerald"
+                        onClick={() => dispatchAction(normalChoice)}
+                      >
+                        <ChevronsUp size={14} />
+                        <span>Deploy as Normal Rookie</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {armorChoices.map((act) => {
+                    const armorCard =
+                      act.armorCardId !== undefined ? getCardById(act.armorCardId) : undefined;
+                    if (!armorCard) return null;
+                    return (
+                      <div
+                        key={armorCard.id}
+                        style={{
+                          border: '1px solid rgba(192, 132, 252, 0.55)',
+                          background: 'rgba(24, 16, 46, 0.85)',
+                          borderRadius: 10,
+                          padding: '0.7rem',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          gap: '0.55rem',
+                        }}
+                      >
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                          <div style={{ width: 52, height: 64, flexShrink: 0, borderRadius: 6, overflow: 'hidden' }}>
+                            <CardArtwork card={armorCard} />
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 800, fontSize: '0.88rem', color: '#e9d5ff' }}>
+                              ★ Armor Evolution (Lv. A)
+                            </div>
+                            <div style={{ fontSize: '0.8rem', fontWeight: 700 }}>
+                              #{armorCard.no} {armorCard.name}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                              <SpecialtyBadge specialty={armorCard.specialty} />
+                              <span className="ddcb-mini-badge hp">HP {armorCard.hp}</span>
+                              <span className="ddcb-mini-badge dp">0 DP</span>
+                            </div>
+                          </div>
+                        </div>
+                        {armorCard.attacks && (
+                          <div
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              padding: '0.25rem 0.5rem',
+                              borderRadius: 6,
+                              background: 'rgba(5, 10, 24, 0.75)',
+                              fontSize: '0.75rem',
+                              fontFamily: 'monospace',
+                            }}
+                          >
+                            <span>
+                              <AttackSymbolSvg slot="circle" size={12} /> {armorCard.attacks.circle.power}
+                            </span>
+                            <span>
+                              <AttackSymbolSvg slot="triangle" size={12} /> {armorCard.attacks.triangle.power}
+                            </span>
+                            <span>
+                              <AttackSymbolSvg slot="x" size={12} /> {armorCard.attacks.x.power}
+                            </span>
+                          </div>
+                        )}
+                        <div style={{ fontSize: '0.74rem', color: '#cbd5e1' }}>
+                          <SupportTextWithTokens text={armorCard.supportText || 'Evolves directly at 0 DP (keeps DP Slot).'} iconSize={12} />
+                        </div>
+                        <button
+                          type="button"
+                          className="ddcb-action-btn purple"
+                          onClick={() => dispatchAction(act)}
+                        >
+                          <Sparkles size={13} />
+                          <span>Evolve to {armorCard.name} (0 DP)</span>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
       {showRulesModal && <RulesHelpModal onClose={() => setShowRulesModal(false)} />}
 

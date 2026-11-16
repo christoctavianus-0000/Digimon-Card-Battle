@@ -225,6 +225,12 @@ export function resolveBattle(state: MatchState, effectRegistry?: EffectRegistry
     const card = getCardById(sup.cardId);
     const effectDef = resolveCardEffectDef(sup.cardId, effectRegistry);
 
+    if (!effectDef || (effectDef.timing !== 'support' && effectDef.timing !== 'both')) {
+      // Digivolve-phase Option cards (293..300) cannot be used as Support cards;
+      // if blind-flipped from Online Deck, they fizzle without triggering.
+      continue;
+    }
+
     state.events.push({
       type: 'supportTriggered',
       side,
@@ -232,15 +238,13 @@ export function resolveBattle(state: MatchState, effectRegistry?: EffectRegistry
       text: card?.supportText ?? '',
     });
 
-    if (effectDef && (effectDef.timing === 'support' || effectDef.timing === 'both')) {
-      const ctx = createEffectExecContext(state, side, {
-        slotPowers,
-        attackOrderOverride,
-        effectRegistry,
-        sourceCardId: sup.cardId,
-      });
-      executeEffectOps(effectDef.ops, ctx, { skipVoidSupport: true });
-    }
+    const ctx = createEffectExecContext(state, side, {
+      slotPowers,
+      attackOrderOverride,
+      effectRegistry,
+      sourceCardId: sup.cardId,
+    });
+    executeEffectOps(effectDef.ops, ctx, { skipVoidSupport: true });
   }
 
   // -------------------------------------------------------------------------
@@ -453,19 +457,23 @@ export function resolveBattle(state: MatchState, effectRegistry?: EffectRegistry
           revivedHp: reviveHp,
         });
       } else {
-        // Normal KO: move entire battle stack (underlying stack + active card) to offline.
+        // Normal KO: move entire battle stack (excluding virtual Armor Level 'A' forms) to offline.
         // DP Slot remains completely intact!
-        const stackCards: CardId[] = [...digimon.stack, digimon.cardId];
+        const stackCards: CardId[] = [...digimon.stack, digimon.cardId].filter(
+          (cid) => getCardById(cid)?.level !== 'A',
+        );
         player.offline.push(...stackCards);
         player.battleDigimon = null;
-        state.events.push({
-          type: 'cardsMoved',
-          side,
-          from: 'battle',
-          to: 'offline',
-          cardIds: stackCards,
-          count: stackCards.length,
-        });
+        if (stackCards.length > 0) {
+          state.events.push({
+            type: 'cardsMoved',
+            side,
+            from: 'battle',
+            to: 'offline',
+            cardIds: stackCards,
+            count: stackCards.length,
+          });
+        }
         state.events.push({
           type: 'digimonKo',
           side,

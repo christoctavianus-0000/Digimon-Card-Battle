@@ -512,4 +512,4 @@ Cards `191`–`292` have `timing: 'support'`. Cards `293`–`300` have `timing: 
 | `297` | Warp Digivolve | `digivolvePhase` | Can digivolve from R to U. (DP are needed.) | `[{ op: 'digivolveModifier', allowSkipLevel: true, requireFromLevels: ['R', 'R P'], allowedToLevels: ['U'] }]` |
 | `298` | De-Armor Digivolve | `digivolvePhase` | Downgrade a Level A Digimon to Level R. | `[{ op: 'devolve', target: 'self', levels: 1, requireFromLevels: ['A'], toLevel: 'R' }]` |
 | `299` | Speed Digivolve | `digivolvePhase` | Can disregard DP in digivolving. (Not possible in Abnormal states) | `[{ op: 'digivolveModifier', ignoreDp: true, notInAbnormal: true }]` |
-| `300` | Digi-devolve | `digivolvePhase` | DownGrade own digivolution by 1 Level. HP double when successful. | `[{ op: 'devolve', target: 'self', levels: 1, onSuccess: [{ op: 'hp', target: 'self', mode: 'multiply', value: 2 }] }]` |
+| `300` | Digi-devolve | `digivolvePhase` | DownGrade own digivolution by 1 Level. HP double when successful. | `[{ op: 'devolve', target: 'self', levels: 1, requireFromLevels: ['C', 'U'], onSuccess: [{ op: 'hp', target: 'self', mode: 'multiply', value: 2 }] }]` |

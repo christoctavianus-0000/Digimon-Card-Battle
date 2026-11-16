@@ -1437,11 +1437,16 @@ export const RulesHelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) =
               • Draw from your Online Deck until you have <strong>4 cards</strong> in Hand.
               <br />• Sacrifice up to <strong>1 Digimon card per turn</strong> from Hand to your{' '}
               <strong>DP Slot (+P)</strong>. Your DP Slot persists across KOs!
-              <br />• <strong>Normal Digivolve (R → C → U):</strong> Matches Specialty and requires
-              accumulated DP ≥ target&apos;s DP cost. Consumes all cards in your DP Slot and resets HP to
-              the new form&apos;s max HP.
-              <br />• <strong>Armor Digivolve (R P → A):</strong> Costs <strong>0 DP</strong> and does{' '}
-              <strong>NOT</strong> consume your DP Slot!
+              <br />• <strong>Partner Armor Evolution (R P → A):</strong> When placing a Partner
+              Rookie during Rookie Placement, choose to deploy it as one of its Armor forms (Veemon
+              has 3; others have 2) at <strong>0 DP</strong> without consuming the DP Slot, or keep it
+              as a normal Rookie (R P) able to Digivolve into C/U!
+              <br />• <strong>Normal Digivolve (R / R P → C → U):</strong> Matches Specialty and
+              requires accumulated DP ≥ target&apos;s DP cost. Consumes all cards in your DP Slot and
+              resets HP to the new form&apos;s max HP.
+              <br />• <strong>Digivolve Options (#293–#300):</strong> Can only be played during the
+              Preparation Phase while you have an Active Digimon (never as Support). If an Option
+              does not produce a Digivolution, it is simply discarded to Offline.
             </div>
           </div>
 
@@ -1451,8 +1456,10 @@ export const RulesHelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) =
               • Both players secretly choose <AttackSymbolSvg slot="circle" size={14} /> Circle,{' '}
               <AttackSymbolSvg slot="triangle" size={14} /> Triangle, or{' '}
               <AttackSymbolSvg slot="x" size={14} /> Cross.
-              <br />• Both players may play <strong>1 Support Card</strong> from Hand, blind-play the{' '}
-              <strong>Top Card of their Online Deck</strong>, or Pass.
+              <br />• Both players may play <strong>1 Battle Support Card</strong> (#191–#292 or a
+              Digimon Support effect) from Hand, blind-play the{' '}
+              <strong>Top Card of their Online Deck</strong> (Digivolve Options #293–#300 fizzle if
+              flipped), or Pass.
               <br />• The Turn Player attacks first by default unless overridden by{' '}
               <strong>1st Attack</strong> or Support effects. Surviving Digimon keep their remaining HP
               into the next turn!

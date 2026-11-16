@@ -244,7 +244,7 @@ export interface BattleContext {
 export interface RulesConfig {
   /** How unspecified card selections (e.g. discard without explicit choice) are resolved. */
   unspecifiedSelection?: 'random' | 'first' | 'owner';
-  /** Whether partner cards (Level 'R P' and 'A') are allowed in decks (max 1 copy). */
+  /** Whether partner cards (Level 'R P') are allowed in decks (max 1 copy). Armor ('A') cards are never allowed in decks. */
   allowPartnerCards?: boolean;
   /** Whether initial mulligan is enabled. */
   enableMulligan?: boolean;
@@ -324,10 +324,10 @@ export type GameEvent =
 
 export type Action =
   | { type: 'mulligan'; side: PlayerSide; keep: boolean }
-  | { type: 'placeRookie'; side: PlayerSide; handIndex: number; cardId?: CardId }
+  | { type: 'placeRookie'; side: PlayerSide; handIndex: number; cardId?: CardId; armorCardId?: CardId }
   | { type: 'addToDp'; side: PlayerSide; handIndex: number; cardId?: CardId }
   | { type: 'digivolve'; side: PlayerSide; handIndex: number; cardId?: CardId }
-  | { type: 'armorDigivolve'; side: PlayerSide; handIndex: number; cardId?: CardId }
+  | { type: 'armorDigivolve'; side: PlayerSide; handIndex?: number; cardId?: CardId; armorCardId?: CardId }
   | { type: 'useDigivolveOption'; side: PlayerSide; handIndex: number; cardId?: CardId; targetHandIndex?: number }
   | { type: 'endDigivolvePhase'; side: PlayerSide }
   | { type: 'chooseAttack'; side: PlayerSide; slot: AttackSlot }

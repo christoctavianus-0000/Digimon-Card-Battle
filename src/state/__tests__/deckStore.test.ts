@@ -83,7 +83,8 @@ describe('deckStore — Deck Validation, Persistence & Import/Export', () => {
     const flamedramon = getCardByName('Flamedramon')!; // A (172)
 
     expect(getMaxCopiesForCard(agumon)).toBe(4);
-    expect(getMaxCopiesForCard(flamedramon)).toBe(4);
+    expect(getMaxCopiesForCard(flamedramon)).toBe(0);
+    expect(canAddCardToDeck([], flamedramon.id).allowed).toBe(false);
     expect(getMaxCopiesForCard(veemon)).toBe(1);
 
     // Incomplete deck (< 30 cards)
@@ -144,12 +145,12 @@ describe('deckStore — Deck Validation, Persistence & Import/Export', () => {
     expect(val.valid).toBe(true);
     expect(val.rookieCount).toBeGreaterThanOrEqual(6);
 
-    const partial = [175, 172]; // Veemon + Flamedramon
+    const partial = [175, 172]; // Veemon + Flamedramon (Armor should be excluded)
     const completed = autoCompleteDeck(partial, { seed: 42 });
     expect(completed).toHaveLength(30);
     expect(validateDeck(completed).valid).toBe(true);
     expect(completed).toContain(175);
-    expect(completed).toContain(172);
+    expect(completed).not.toContain(172);
   });
 
   it('computes deck specialty breakdown, level curve, and +P averages', () => {

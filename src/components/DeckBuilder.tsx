@@ -1143,7 +1143,7 @@ export const DeckBuilder: React.FC<DeckBuilderProps> = ({
                   card={card}
                   size="compact"
                   showSupport
-                  countBadge={`${inDeckCount}/${maxAllowed}`}
+                  countBadge={maxAllowed === 0 ? 'Evo Only' : `${inDeckCount}/${maxAllowed}`}
                   selected={inDeckCount > 0}
                   lockedReason={!addCheck.allowed ? addCheck.reason : null}
                   onClick={() => {

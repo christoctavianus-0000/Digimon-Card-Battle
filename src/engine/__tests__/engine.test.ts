@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { getCardById } from '../../data/cards';
-import type { CardId, MatchState } from '../../types/game';
+import type { Action, CardId, MatchState } from '../../types/game';
 import {
+  ARMOR_LINEAGE,
   applyAction,
   applyNumericMode,
   createEffectExecContext,
@@ -21,7 +22,7 @@ function buildTestDeck(): CardId[] {
     27, 27, 27, 27, // 4x #027 Agumon (R, Fire)
     29, 29, 29, 29, // 4x #029 Biyomon (R, Fire)
     175, // 1x #175 Veemon (R P, Fire)
-    172, 172, // 2x #172 Flamedramon (A, Fire)
+    30, 30, // 2x #030 DemiMeramon (R, Fire)
     14, 14, 14, 14, // 4x #014 Greymon (C, Fire)
     9, 9, 9, 9, // 4x #009 MetalGreymon (U, Fire)
     2, 2, 2, 2, // 4x #002 WarGreymon (U, Fire)
@@ -101,11 +102,19 @@ describe('Core Battle Engine (DDCB PS1)', () => {
   // 1. Deck Validation
   // -------------------------------------------------------------------------
   describe('Deck Validation', () => {
-    it('1. accepts a valid 30-card deck respecting copy and partner limits', () => {
+    it('1. accepts a valid 30-card deck respecting copy and partner limits, and rejects Armor (A) cards', () => {
       const deck = buildTestDeck();
       const res = validateDeck(deck);
       expect(res.valid).toBe(true);
       expect(res.errors).toHaveLength(0);
+
+      const deckWithArmor = [...deck];
+      deckWithArmor[0] = 172; // #172 Flamedramon (Level A) cannot be placed in decks
+      const armorRes = validateDeck(deckWithArmor);
+      expect(armorRes.valid).toBe(false);
+      expect(armorRes.errors.some((e) => e.includes('Flamedramon') || e.includes('Armor'))).toBe(
+        true
+      );
     });
 
     it('2. rejects a deck with fewer or more than 30 cards', () => {
@@ -297,35 +306,81 @@ describe('Core Battle Engine (DDCB PS1)', () => {
       expect(state.players.player.dpSlot).toEqual([]);
     });
 
-    it('12. performs Armor Digivolution (R P -> A) with 0 DP cost and preserves DP Slot cards', () => {
-      let state = setupDigivolvePhase();
-      const veemon = getCardById(175)!;
+    it('12. Partner R P offers Armor Evolution (Veemon 3, others 2) or Normal Rookie (C -> U) on placement and preserves DP Slot', () => {
+      // Canonical Armor evolution counts: Veemon has 3, all other Partners have 2
+      expect(ARMOR_LINEAGE[175]).toEqual([172, 173, 185]);
+      for (const partnerId of [182, 183, 184, 187, 190]) {
+        expect(ARMOR_LINEAGE[partnerId]).toHaveLength(2);
+      }
+
+      const base = setupDigivolvePhase();
       const flamedramon = getCardById(172)!;
+      const greymon = getCardById(14)!;
 
-      state.players.player.battleDigimon = {
-        cardId: 175,
-        stack: [],
-        currentHp: 200,
-        maxHp: veemon.hp,
-        effectiveSpecialty: 'Fire',
-      };
-      state.players.player.dpSlot = [27];
-      state.players.player.dpTotal = 20;
-      state.players.player.hand = [172, 179]; // #172 Flamedramon (Veemon lineage), #179 Halsemon (Hawkmon lineage)
+      // Branch A: Deploy Veemon (#175) as Armor (#172 Flamedramon) during rookiePlacement
+      const stateA = structuredClone(base);
+      stateA.phase = 'rookiePlacement';
+      stateA.activePlayer = 'player';
+      stateA.players.player.battleDigimon = null;
+      stateA.players.player.dpSlot = [27];
+      stateA.players.player.dpTotal = 20;
+      stateA.players.player.hand = [175, 14]; // #175 Veemon (R P), #014 Greymon (C)
 
-      const armorActions = getLegalActions(state, 'player').filter(
-        (a) => a.type === 'armorDigivolve',
+      const veemonActions = getLegalActions(stateA, 'player').filter(
+        (a): a is Extract<Action, { type: 'placeRookie' }> =>
+          a.type === 'placeRookie' && a.handIndex === 0
       );
-      expect(armorActions).toHaveLength(1);
-      expect((armorActions[0] as { cardId?: number }).cardId).toBe(172);
+      // 1 normal Rookie deployment + 3 Veemon Armor choices
+      expect(veemonActions).toHaveLength(4);
+      expect(veemonActions.filter((a) => a.armorCardId === undefined)).toHaveLength(1);
+      expect(
+        veemonActions
+          .filter((a) => a.armorCardId !== undefined)
+          .map((a) => a.armorCardId)
+      ).toEqual([172, 173, 185]);
 
-      state = applyAction(state, { type: 'armorDigivolve', side: 'player', handIndex: 0 });
-      expect(state.players.player.battleDigimon!.cardId).toBe(172);
-      expect(state.players.player.battleDigimon!.stack).toEqual([175]);
-      expect(state.players.player.battleDigimon!.currentHp).toBe(flamedramon.hp);
-      // DP Slot is preserved!
-      expect(state.players.player.dpSlot).toEqual([27]);
-      expect(state.players.player.dpTotal).toBe(20);
+      const afterArmorPlace = applyAction(stateA, {
+        type: 'placeRookie',
+        side: 'player',
+        handIndex: 0,
+        armorCardId: 172,
+      });
+      expect(afterArmorPlace.players.player.battleDigimon!.cardId).toBe(172);
+      expect(afterArmorPlace.players.player.battleDigimon!.stack).toEqual([175]);
+      expect(afterArmorPlace.players.player.battleDigimon!.currentHp).toBe(flamedramon.hp);
+      expect(afterArmorPlace.players.player.dpSlot).toEqual([27]);
+      expect(afterArmorPlace.players.player.dpTotal).toBe(20);
+
+      // Branch B: Deploy Veemon (#175) as a Normal Rookie and digivolve normally into #014 Greymon (C)
+      const stateB = structuredClone(base);
+      stateB.phase = 'rookiePlacement';
+      stateB.activePlayer = 'player';
+      stateB.players.player.battleDigimon = null;
+      stateB.players.player.dpSlot = [27];
+      stateB.players.player.dpTotal = greymon.dp;
+      stateB.players.player.hand = [175, 14];
+
+      let afterNormalPlace = applyAction(stateB, {
+        type: 'placeRookie',
+        side: 'player',
+        handIndex: 0,
+      });
+      expect(afterNormalPlace.players.player.battleDigimon!.cardId).toBe(175);
+      expect(afterNormalPlace.players.player.battleDigimon!.stack).toEqual([]);
+
+      afterNormalPlace.phase = 'digivolve';
+      afterNormalPlace.activePlayer = 'player';
+      const digiActions = getLegalActions(afterNormalPlace, 'player');
+      expect(digiActions.some((a) => a.type === 'armorDigivolve')).toBe(false);
+      expect(digiActions.some((a) => a.type === 'digivolve' && a.handIndex === 0)).toBe(true);
+
+      afterNormalPlace = applyAction(afterNormalPlace, {
+        type: 'digivolve',
+        side: 'player',
+        handIndex: 0,
+      });
+      expect(afterNormalPlace.players.player.battleDigimon!.cardId).toBe(14);
+      expect(afterNormalPlace.players.player.battleDigimon!.stack).toEqual([175]);
     });
 
     it('13. executes #299 Speed Digivolve (ignores DP requirement and keeps DP Slot intact)', () => {
@@ -454,7 +509,21 @@ describe('Core Battle Engine (DDCB PS1)', () => {
       state = applyAction(state, { type: 'useDigivolveOption', side: 'player', handIndex: 0 });
       expect(state.players.player.battleDigimon!.cardId).toBe(175);
       expect(state.players.player.battleDigimon!.currentHp).toBe(veemon.hp);
-      expect(state.players.player.offline).toContain(172);
+      expect(state.players.player.offline).not.toContain(172);
+      expect(state.players.player.offline).toContain(298);
+
+      // Test #300 Digi-devolve on an active Armor Digimon (#172 A): does not devolve Armor; Option is simply discarded
+      state.players.player.battleDigimon = {
+        cardId: 172,
+        stack: [175],
+        currentHp: 300,
+        maxHp: getCardById(172)!.hp,
+        effectiveSpecialty: 'Fire',
+      };
+      state.players.player.hand = [300];
+      state = applyAction(state, { type: 'useDigivolveOption', side: 'player', handIndex: 0 });
+      expect(state.players.player.battleDigimon!.cardId).toBe(172);
+      expect(state.players.player.offline).toContain(300);
 
       // Test #300 Digi-devolve: Greymon (C) -> Agumon (R, base HP doubled!)
       state.players.player.battleDigimon = {

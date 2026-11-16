@@ -70,7 +70,7 @@ export function getDigivolutionNotes(card: CardData): {
     if (card.id >= 293) {
       return {
         summary:
-          'Digivolve-Phase Option Card (Cards #293–#300). Played from Hand during your Preparation / Digivolve Phase before entering Battle.',
+          'Digivolve-Phase Option Card (Cards #293–#300). Can only be played during your Preparation / Digivolve Phase while you have an Active Digimon (never as a Support card). If it does not trigger a Digivolution, it is simply discarded to Offline.',
         relatedCards,
       };
     }
@@ -86,11 +86,11 @@ export function getDigivolutionNotes(card: CardData): {
     for (const aid of armorIds) {
       const armorCard = getCardById(aid);
       if (armorCard) {
-        relatedCards.push({ label: 'Armor Digivolves To', card: armorCard });
+        relatedCards.push({ label: 'Armor Evolves To', card: armorCard });
       }
     }
     return {
-      summary: `Partner Rookie (Max 1 copy per deck). Can enter the Battle Area directly as a Rookie, Digivolve normally into a ${card.specialty} Champion (C), or Armor Digivolve for 0 DP (without discarding DP Slot!) into its designated Armor (A) forms.`,
+      summary: `Partner Rookie (Max 1 copy per deck). When played in Rookie Placement, choose to evolve immediately for 0 DP into one of its Armor (A) forms (${armorIds.length} forms) or deploy as a Normal Rookie able to Digivolve into ${card.specialty} Champion (C) and Ultimate (U) cards.`,
       relatedCards,
     };
   }
@@ -100,11 +100,12 @@ export function getDigivolutionNotes(card: CardData): {
     if (partnerId !== undefined) {
       const partnerCard = getCardById(partnerId);
       if (partnerCard) {
-        relatedCards.push({ label: 'Armor Digivolves From', card: partnerCard });
+        relatedCards.push({ label: 'Armor Evolves From', card: partnerCard });
       }
     }
     return {
-      summary: `Armor Level Digimon (0 DP cost, +0 P). Armor Digivolves from its designated Partner Rookie (R P) without consuming cards in the DP Slot. Can digivolve further only via ArmorCrush Digivolve (#294) or De-Armor Digivolve (#298).`,
+      summary:
+        'Armor Level Digimon (0 DP cost, +0 P). Cannot be added to a deck — evolves directly from its Partner Rookie (R P) when deployed, without consuming DP Slot cards. Can evolve further via Download (#293), ArmorCrush (#294), or revert via De-Armor (#298).',
       relatedCards,
     };
   }
@@ -178,7 +179,8 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({
   if (!card || !isOpen) return null;
 
   const specMeta = getSpecialtyMeta(card);
-  const maxAllowed = card.level === 'R P' ? MAX_PARTNER_COPIES : MAX_COPIES;
+  const maxAllowed =
+    card.level === 'A' ? 0 : card.level === 'R P' ? MAX_PARTNER_COPIES : MAX_COPIES;
   const digivolveInfo = getDigivolutionNotes(card);
   const xEffectExplanation =
     card.attacks?.x.effect ? describeXEffectDetail(card.attacks.x.effect) : null;
@@ -333,7 +335,9 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({
                 color: 'var(--text-secondary)',
               }}
             >
-              Limit: {maxAllowed} {maxAllowed === 1 ? 'Copy' : 'Copies'}
+              {maxAllowed === 0
+                ? 'Limit: Evolution Only (Cannot add to deck)'
+                : `Limit: ${maxAllowed} ${maxAllowed === 1 ? 'Copy' : 'Copies'}`}
             </span>
           </div>
 
@@ -395,7 +399,9 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({
                     color: 'var(--accent-cyan)',
                   }}
                 >
-                  In Active Deck: {deckCount} / {maxAllowed}
+                  {maxAllowed === 0
+                    ? 'Evolution Only (Cannot add to deck)'
+                    : `In Active Deck: ${deckCount} / ${maxAllowed}`}
                 </span>
               )}
               {onRemoveFromDeck && (

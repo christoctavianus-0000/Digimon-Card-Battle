@@ -297,15 +297,11 @@ export function evaluatePrepBoardState(state: MatchState, side: PlayerSide): num
         c.specialty === active.effectiveSpecialty &&
         (((activeCard.level === 'R' || activeCard.level === 'R P') && c.level === 'C') ||
           (activeCard.level === 'C' && c.level === 'U'));
-      const isArmorEvo =
-        activeCard.level === 'R P' &&
-        c.level === 'A' &&
-        Boolean(ARMOR_LINEAGE[activeCard.id]?.includes(c.id));
 
       const evoKey = `${c.level}-${c.specialty}`;
-      if ((isNextEvo || isArmorEvo) && !seenEvoKeys.has(evoKey)) {
+      if (isNextEvo && !seenEvoKeys.has(evoKey)) {
         seenEvoKeys.add(evoKey);
-        score += isArmorEvo ? 310 : 260;
+        score += 260;
       }
     } else if (isBattleSupportOption(cid)) {
       score += 110;
@@ -326,8 +322,8 @@ interface PrepSearchResult {
 }
 
 /**
- * Depth-limited search over `digivolve` phase actions (`armorDigivolve`, `digivolve`,
- * `useDigivolveOption`, `addToDp`) using `applyAction` from `src/engine`.
+ * Depth-limited search over `digivolve` phase actions (`digivolve`, `useDigivolveOption`,
+ * `addToDp`) using `applyAction` from `src/engine`.
  */
 function searchBestPrepSequence(
   state: MatchState,
@@ -344,11 +340,10 @@ function searchBestPrepSequence(
   // Order immediate digivolutions first so ties always prefer evolving before spending extra cards
   const orderedActions = [...legalActions].sort((a, b) => {
     const rank = (t: Action['type']): number => {
-      if (t === 'armorDigivolve') return 0;
-      if (t === 'digivolve') return 1;
-      if (t === 'useDigivolveOption') return 2;
-      if (t === 'addToDp') return 3;
-      return 4;
+      if (t === 'digivolve') return 0;
+      if (t === 'useDigivolveOption') return 1;
+      if (t === 'addToDp') return 2;
+      return 3;
     };
     return rank(a.type) - rank(b.type);
   });
@@ -376,7 +371,7 @@ function searchBestPrepSequence(
         if (seenOptionCardIds.has(cid)) continue;
         seenOptionCardIds.add(cid);
       }
-    } else if (action.type === 'digivolve' || action.type === 'armorDigivolve') {
+    } else if (action.type === 'digivolve') {
       const cid = player.hand[action.handIndex];
       if (cid !== undefined) {
         if (seenDigivolveCardIds.has(cid)) continue;
@@ -431,9 +426,16 @@ export function chooseHardAction(state: MatchState, side: PlayerSide): Action {
       }
 
       let bestOpeningScore = -Infinity;
+      const disabledArmors = sanitizedState.config.disableArmorOnCardIds?.[side] ?? [];
       for (const r of rookies) {
         const s = scoreRookieForPlacement(sanitizedState, side, r.idx);
         if (s > bestOpeningScore) bestOpeningScore = s;
+        if (r.card.level === 'R P' && !disabledArmors.includes(r.card.id)) {
+          for (const aid of ARMOR_LINEAGE[r.card.id] ?? []) {
+            const armorScore = scoreRookieForPlacement(sanitizedState, side, r.idx, aid);
+            if (armorScore > bestOpeningScore) bestOpeningScore = armorScore;
+          }
+        }
       }
 
       // Keep hand if we have a strong Rookie, Partner Rookie, evolution combo, or >= 2 Rookies
@@ -444,13 +446,18 @@ export function chooseHardAction(state: MatchState, side: PlayerSide): Action {
     }
 
     case 'rookiePlacement': {
-      // Simulate placing each candidate Rookie and look ahead if we enter digivolve phase immediately
+      // Simulate placing each candidate Rookie (including Partner Armor choices) and look ahead
       let bestAction = legalActions[0]!;
       let bestScore = -Infinity;
 
       for (const action of legalActions) {
         if (action.type !== 'placeRookie') continue;
-        const heuristicScore = scoreRookieForPlacement(sanitizedState, side, action.handIndex);
+        const heuristicScore = scoreRookieForPlacement(
+          sanitizedState,
+          side,
+          action.handIndex,
+          action.armorCardId,
+        );
         const afterPlace = applyAction(sanitizedState, action);
 
         let lookaheadBonus = 0;

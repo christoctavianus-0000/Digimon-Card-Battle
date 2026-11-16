@@ -113,7 +113,14 @@ export function validateDeck(
     const card = getCardById(id);
     if (!card) continue;
 
-    if (!allowPartners && (card.level === 'R P' || card.level === 'A' || card.isPartner)) {
+    if (card.level === 'A') {
+      errors.push(
+        `Armor card "${card.name}" (#${card.no}) cannot be added to a deck; Armor Digimon evolve from Partner cards.`,
+      );
+      continue;
+    }
+
+    if (!allowPartners && (card.level === 'R P' || card.isPartner)) {
       errors.push(`Partner/Armor card "${card.name}" (#${card.no}) is not allowed by configuration.`);
     }
 
@@ -311,140 +318,17 @@ export function canArmorDigivolve(
 }
 
 /**
- * Merges a `DigivolveModifier` op onto an existing `DigivolveModifier`, matching `effectInterpreter`.
- */
-function mergePreviewDigivolveModifier(
-  base: DigivolveModifier | null | undefined,
-  modOp: {
-    ignoreSpecialty?: boolean;
-    ignoreLevel?: boolean;
-    ignoreDp?: boolean;
-    extraDp?: number;
-    allowSameLevel?: boolean;
-    allowSkipLevel?: boolean;
-    requireFromLevels?: readonly import('../types/game').Level[];
-    allowedToLevels?: readonly import('../types/game').Level[];
-    notInAbnormal?: boolean;
-  },
-  sourceCardId: CardId,
-): DigivolveModifier {
-  const prev = base ?? {};
-  return {
-    ignoreSpecialty: Boolean(prev.ignoreSpecialty || modOp.ignoreSpecialty),
-    ignoreLevel: Boolean(prev.ignoreLevel || modOp.ignoreLevel),
-    ignoreDp: Boolean(prev.ignoreDp || modOp.ignoreDp),
-    extraDp: (prev.extraDp ?? 0) + (modOp.extraDp ?? 0),
-    allowSameLevel: Boolean(prev.allowSameLevel || modOp.allowSameLevel),
-    allowSkipLevel: Boolean(prev.allowSkipLevel || modOp.allowSkipLevel),
-    requireFromLevels: modOp.requireFromLevels ? [...modOp.requireFromLevels] : prev.requireFromLevels,
-    allowedToLevels: modOp.allowedToLevels ? [...modOp.allowedToLevels] : prev.allowedToLevels,
-    notInAbnormal: Boolean(prev.notInAbnormal || modOp.notInAbnormal),
-    sourceCardId,
-  };
-}
-
-/**
  * Checks whether a Digivolve-phase Option card (`293`..`300`) can currently be used by `player`.
+ * During the Digivolve phase, any Digivolve-phase Option card in hand can be used whenever the
+ * player has an active Digimon (if it produces no digivolution, it is simply discarded).
  */
 export function canUseDigivolveOptionCard(
   player: PlayerState,
   optionCardId: CardId,
-  options?: { handIndex?: number; alreadyAddedDp?: boolean },
+  _options?: { handIndex?: number; alreadyAddedDp?: boolean },
 ): boolean {
   if (!isDigivolvePhaseOption(optionCardId)) return false;
-  const active = player.battleDigimon;
-  if (!active) return false;
-  const activeCard = getCardById(active.cardId);
-  if (!activeCard) return false;
-
-  switch (optionCardId) {
-    case 294: // ArmorCrush Digivolve: requires active Level A
-      if (activeCard.level !== 'A') return false;
-      break;
-    case 297: // Warp Digivolve: requires active Level R or R P
-      if (activeCard.level !== 'R' && activeCard.level !== 'R P') return false;
-      break;
-    case 298: {
-      // De-Armor Digivolve: requires active Level A with an underlying R / R P card
-      if (activeCard.level !== 'A' || active.stack.length === 0) return false;
-      const underCard = getCardById(active.stack[active.stack.length - 1]!);
-      return Boolean(underCard && (underCard.level === 'R' || underCard.level === 'R P'));
-    }
-    case 300: // Digi-devolve: requires a digivolved stack (at least 1 card underneath)
-      return active.stack.length >= 1;
-    default:
-      // 293 Download, 295 Special, 296 Mutant, 299 Speed
-      break;
-  }
-
-  // When called standalone with an empty synthetic hand, fall back to structural check above.
-  if (player.hand.length === 0) {
-    return true;
-  }
-
-  const effectDef = resolveCardEffectDef(optionCardId);
-  const modOp = effectDef?.ops.find((op) => op.op === 'digivolveModifier');
-  if (!modOp || modOp.op !== 'digivolveModifier') {
-    return true;
-  }
-
-  const selfHandIndex =
-    options?.handIndex !== undefined
-      ? options.handIndex
-      : player.hand.indexOf(optionCardId);
-
-  const previewModifier = mergePreviewDigivolveModifier(
-    player.activeDigivolveModifier,
-    modOp,
-    optionCardId,
-  );
-  if (previewModifier.notInAbnormal && hasAbnormalDigivolveFlags(previewModifier)) {
-    return false;
-  }
-
-  // Also check combo with any other non-Download digivolveModifier Option in hand (e.g. Mutant + Special).
-  let comboModifier: DigivolveModifier = previewModifier;
-  for (let i = 0; i < player.hand.length; i++) {
-    if (i === selfHandIndex) continue;
-    const otherId = player.hand[i]!;
-    if (otherId === optionCardId || otherId === 293 || !isDigivolvePhaseOption(otherId)) continue;
-    const otherEff = resolveCardEffectDef(otherId);
-    const otherMod = otherEff?.ops.find((op) => op.op === 'digivolveModifier');
-    if (otherMod && otherMod.op === 'digivolveModifier') {
-      const candidateCombo = mergePreviewDigivolveModifier(comboModifier, otherMod, optionCardId);
-      if (candidateCombo.notInAbnormal && hasAbnormalDigivolveFlags(candidateCombo)) {
-        continue;
-      }
-      comboModifier = candidateCombo;
-    }
-  }
-
-  const canTargetWithModifier = (mod: DigivolveModifier): boolean =>
-    player.hand.some((targetCid, targetIdx) => {
-      if (targetIdx === selfHandIndex) return false;
-      const targetCard = getCardById(targetCid);
-      if (!targetCard || targetCard.kind !== 'Digimon') return false;
-
-      let maxReachableDp = player.dpTotal;
-      if (options?.alreadyAddedDp === false) {
-        for (let dpIdx = 0; dpIdx < player.hand.length; dpIdx++) {
-          if (dpIdx === selfHandIndex || dpIdx === targetIdx) continue;
-          const dpCard = getCardById(player.hand[dpIdx]!);
-          if (dpCard && dpCard.kind === 'Digimon' && dpCard.level !== 'A') {
-            maxReachableDp = Math.max(maxReachableDp, player.dpTotal + dpCard.plusP);
-          }
-        }
-      }
-
-      const simulatedPlayer: PlayerState = {
-        ...player,
-        dpTotal: maxReachableDp,
-        activeDigivolveModifier: mod,
-      };
-      return canNormalOrOptionDigivolve(simulatedPlayer, targetCard);
-    });
-
-  return canTargetWithModifier(previewModifier) || canTargetWithModifier(comboModifier);
+  return player.battleDigimon !== null;
 }
 
 /**
@@ -756,6 +640,7 @@ export function getLegalActions(state: MatchState, side: PlayerSide): Action[] {
       if (player.battleDigimon !== null) return [];
       // During mid-match post-KO placement, only activePlayer places a Rookie.
       // During initial setup, both players have battleDigimon === null; allow either side that needs to place.
+      const disabledArmorIds = state.config.disableArmorOnCardIds?.[side];
       const actions: Action[] = [];
       for (let i = 0; i < player.hand.length; i++) {
         const cardId = player.hand[i]!;
@@ -766,6 +651,22 @@ export function getLegalActions(state: MatchState, side: PlayerSide): Action[] {
             handIndex: i,
             cardId,
           });
+          const card = getCardById(cardId);
+          if (
+            card?.level === 'R P' &&
+            !(disabledArmorIds && disabledArmorIds.includes(cardId))
+          ) {
+            const armorForms = ARMOR_LINEAGE[cardId] ?? [];
+            for (const armorCardId of armorForms) {
+              actions.push({
+                type: 'placeRookie',
+                side,
+                handIndex: i,
+                cardId,
+                armorCardId,
+              });
+            }
+          }
         }
       }
       return actions;
@@ -806,21 +707,13 @@ export function getLegalActions(state: MatchState, side: PlayerSide): Action[] {
         }
       }
 
-      // 3. Normal / Option-modified Digivolve and Armor Digivolve
-      const disabledArmorIds = state.config.disableArmorOnCardIds?.[side];
+      // 3. Normal / Option-modified Digivolve (into C / U or Option-enabled targets)
       for (let i = 0; i < player.hand.length; i++) {
         const cardId = player.hand[i]!;
         const card = getCardById(cardId);
         if (!card || card.kind !== 'Digimon') continue;
 
-        if (canArmorDigivolve(player, card, disabledArmorIds)) {
-          actions.push({
-            type: 'armorDigivolve',
-            side,
-            handIndex: i,
-            cardId,
-          });
-        } else if (canNormalOrOptionDigivolve(player, card)) {
+        if (canNormalOrOptionDigivolve(player, card)) {
           actions.push({
             type: 'digivolve',
             side,
@@ -1057,22 +950,64 @@ export function applyAction( currentState: MatchState, action: Action): MatchSta
       }
       const card = getCardById(cardId)!;
 
-      player.hand.splice(action.handIndex, 1);
-      const activeDigimon: ActiveDigimon = {
-        cardId: card.id,
-        stack: [],
-        currentHp: card.hp,
-        maxHp: card.hp,
-        effectiveSpecialty: card.specialty ?? 'Fire',
-      };
-      player.battleDigimon = activeDigimon;
+      if (action.armorCardId !== undefined) {
+        const disabledArmorIds = state.config.disableArmorOnCardIds?.[side];
+        const allowedArmors = ARMOR_LINEAGE[card.id];
+        const armorCard = getCardById(action.armorCardId);
+        if (
+          card.level !== 'R P' ||
+          (disabledArmorIds && disabledArmorIds.includes(card.id)) ||
+          !allowedArmors ||
+          !allowedArmors.includes(action.armorCardId) ||
+          !armorCard ||
+          armorCard.level !== 'A'
+        ) {
+          throw new Error(
+            `Illegal Armor Evolution ${action.armorCardId} for Rookie ${card.id} (#${card.no}).`,
+          );
+        }
 
-      state.events.push({
-        type: 'rookiePlaced',
-        side,
-        cardId: card.id,
-        hp: card.hp,
-      });
+        player.hand.splice(action.handIndex, 1);
+        player.battleDigimon = {
+          cardId: armorCard.id,
+          stack: [card.id],
+          currentHp: armorCard.hp,
+          maxHp: armorCard.hp,
+          effectiveSpecialty: armorCard.specialty ?? card.specialty ?? 'Fire',
+        };
+
+        state.events.push({
+          type: 'rookiePlaced',
+          side,
+          cardId: card.id,
+          hp: card.hp,
+        });
+        state.events.push({
+          type: 'digivolved',
+          side,
+          fromCardId: card.id,
+          toCardId: armorCard.id,
+          hp: armorCard.hp,
+          method: 'armor',
+        });
+      } else {
+        player.hand.splice(action.handIndex, 1);
+        const activeDigimon: ActiveDigimon = {
+          cardId: card.id,
+          stack: [],
+          currentHp: card.hp,
+          maxHp: card.hp,
+          effectiveSpecialty: card.specialty ?? 'Fire',
+        };
+        player.battleDigimon = activeDigimon;
+
+        state.events.push({
+          type: 'rookiePlaced',
+          side,
+          cardId: card.id,
+          hp: card.hp,
+        });
+      }
 
       const oppSide = otherSide(side);
       if (state.players[oppSide].battleDigimon === null) {
@@ -1216,7 +1151,45 @@ export function applyAction( currentState: MatchState, action: Action): MatchSta
           `Action 'armorDigivolve' not allowed for '${side}' in phase '${state.phase}'.`,
         );
       }
-      performDigivolveFromHand(state, side, action.handIndex, true);
+      const active = player.battleDigimon;
+      if (!active) {
+        throw new Error(`Cannot Armor Digivolve: ${side} has no active Digimon.`);
+      }
+      const targetArmorId =
+        action.armorCardId ??
+        action.cardId ??
+        (action.handIndex !== undefined ? player.hand[action.handIndex] : undefined);
+      if (targetArmorId === undefined) {
+        throw new Error(`Missing target Armor card for 'armorDigivolve'.`);
+      }
+      const toCard = getCardById(targetArmorId);
+      if (
+        !toCard ||
+        !canArmorDigivolve(player, toCard, state.config.disableArmorOnCardIds?.[side])
+      ) {
+        throw new Error(`Illegal Armor Digivolution from ${active.cardId} to ${targetArmorId}.`);
+      }
+      if (
+        action.armorCardId === undefined &&
+        action.handIndex !== undefined &&
+        player.hand[action.handIndex] === toCard.id
+      ) {
+        player.hand.splice(action.handIndex, 1);
+      }
+      const fromCardId = active.cardId;
+      active.stack.push(fromCardId);
+      active.cardId = toCard.id;
+      active.maxHp = toCard.hp;
+      active.currentHp = toCard.hp;
+      active.effectiveSpecialty = toCard.specialty ?? active.effectiveSpecialty;
+      state.events.push({
+        type: 'digivolved',
+        side,
+        fromCardId,
+        toCardId: toCard.id,
+        hp: active.currentHp,
+        method: 'armor',
+      });
       return state;
     }
 

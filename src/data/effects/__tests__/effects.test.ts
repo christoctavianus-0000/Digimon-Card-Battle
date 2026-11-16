@@ -348,7 +348,7 @@ describe('Effect Registry (000..300)', () => {
         { op: 'digivolveModifier', ignoreDp: true, notInAbnormal: true },
       ]);
       expect(getCardEffect(300).ops).toEqual([
-        { op: 'devolve', target: 'self', levels: 1, onSuccess: [{ op: 'hp', target: 'self', mode: 'multiply', value: 2 }] },
+        { op: 'devolve', target: 'self', levels: 1, requireFromLevels: ['C', 'U'], onSuccess: [{ op: 'hp', target: 'self', mode: 'multiply', value: 2 }] },
       ]);
     });
 

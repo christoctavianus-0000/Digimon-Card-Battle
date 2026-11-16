@@ -97,12 +97,12 @@ export function getMaxCopiesForCard(
 ): number {
   const card = typeof cardOrId === 'number' ? getCardById(cardOrId) : cardOrId;
   if (!card) return 0;
+  if (card.level === 'A') {
+    return 0;
+  }
   if (card.level === 'R P') {
     if (options?.allowPartnerCards === false) return 0;
     return options?.maxPartnerCopies ?? MAX_PARTNER_COPIES;
-  }
-  if (card.level === 'A' && options?.allowPartnerCards === false) {
-    return 0;
   }
   return options?.maxCopies ?? MAX_COPIES;
 }
@@ -133,6 +133,15 @@ export function canAddCardToDeck(
     };
   }
 
+  if (card.level === 'A') {
+    return {
+      allowed: false,
+      reason: 'Armor (A) cards cannot be added to a deck — they evolve directly from Partner cards.',
+      currentCount: 0,
+      maxAllowed: 0,
+    };
+  }
+
   const maxAllowed = getMaxCopiesForCard(card, options);
   const currentCount = currentCards.filter((id) => id === cardId).length;
 
@@ -148,7 +157,7 @@ export function canAddCardToDeck(
   if (maxAllowed === 0) {
     return {
       allowed: false,
-      reason: 'Partner / Armor cards are disabled by current rules',
+      reason: 'Partner cards are disabled by current rules',
       currentCount,
       maxAllowed,
     };
@@ -245,8 +254,15 @@ export function validateDeck(
     const card = getCardById(id);
     if (!card) continue;
 
-    if (!allowPartnerCards && (card.level === 'R P' || card.level === 'A')) {
-      errors.push(`${card.name} (#${card.no}) is a Partner/Armor card and is not allowed.`);
+    if (card.level === 'A') {
+      errors.push(
+        `${card.name} (#${card.no}) is an Armor (A) card and cannot be placed in a deck (evolves directly from its Partner).`
+      );
+      continue;
+    }
+
+    if (!allowPartnerCards && card.level === 'R P') {
+      errors.push(`${card.name} (#${card.no}) is a Partner card and is not allowed.`);
       continue;
     }
 
@@ -415,7 +431,9 @@ export function autoCompleteDeck(
   currentCards: readonly CardId[],
   options?: { preferredSpecialty?: Specialty; seed?: number }
 ): CardId[] {
-  const result = [...currentCards].slice(0, DECK_SIZE);
+  const result = currentCards
+    .filter((id) => getCardById(id)?.level !== 'A')
+    .slice(0, DECK_SIZE);
   const rngState = {
     seed: (options?.seed ?? Date.now() ^ 0x9e3779b9) >>> 0,
   };
@@ -845,15 +863,23 @@ export function loadDeckStore(storageKey = DECK_STORE_STORAGE_KEY): DeckStoreSta
 
     const decks =
       Array.isArray(parsed.decks) && parsed.decks.length > 0
-        ? parsed.decks.map((d, idx) => ({
-            id: typeof d.id === 'string' && d.id ? d.id : `deck_${idx + 1}`,
-            name: typeof d.name === 'string' && d.name.trim() ? d.name.trim() : `Deck ${idx + 1}`,
-            cards: Array.isArray(d.cards)
+        ? parsed.decks.map((d, idx) => {
+            const rawValidCards = Array.isArray(d.cards)
               ? d.cards.map(Number).filter((n) => !Number.isNaN(n) && Boolean(getCardById(n)))
-              : [],
-            ...(d.baseDeckId ? { baseDeckId: d.baseDeckId } : {}),
-            updatedAt: typeof d.updatedAt === 'number' ? d.updatedAt : Date.now(),
-          }))
+              : [];
+            const withoutArmor = rawValidCards.filter((n) => getCardById(n)?.level !== 'A');
+            const cards =
+              rawValidCards.length === DECK_SIZE && withoutArmor.length < DECK_SIZE
+                ? autoCompleteDeck(withoutArmor, { seed: (idx + 1) * 7919 })
+                : withoutArmor;
+            return {
+              id: typeof d.id === 'string' && d.id ? d.id : `deck_${idx + 1}`,
+              name: typeof d.name === 'string' && d.name.trim() ? d.name.trim() : `Deck ${idx + 1}`,
+              cards,
+              ...(d.baseDeckId ? { baseDeckId: d.baseDeckId } : {}),
+              updatedAt: typeof d.updatedAt === 'number' ? d.updatedAt : Date.now(),
+            };
+          })
         : fallback.decks;
 
     const activeDeckId =

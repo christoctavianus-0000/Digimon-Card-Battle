@@ -17,7 +17,7 @@ function buildTestDeck(): CardId[] {
     27, 27, 27, 27, // 4x #027 Agumon (R, Fire)
     29, 29, 29, 29, // 4x #029 Biyomon (R, Fire)
     175, // 1x #175 Veemon (R P, Fire)
-    172, 172, // 2x #172 Flamedramon (A, Fire)
+    30, 30, // 2x #030 DemiMeramon (R, Fire)
     14, 14, 14, 14, // 4x #014 Greymon (C, Fire)
     9, 9, 9, 9, // 4x #009 MetalGreymon (U, Fire)
     2, 2, 2, 2, // 4x #002 WarGreymon (U, Fire)
@@ -141,7 +141,7 @@ describe('Regression tests for engine bug fixes', () => {
     expect(state.players.opponent.online).toEqual(analogman!.cards.slice(4));
   });
 
-  it('4. disableArmorOnCardIds forbids Armor Digivolve on listed Partner IDs while allowing it otherwise', () => {
+  it('4. disableArmorOnCardIds forbids Armor Evolution during Partner deployment while allowing Normal Rookie placement', () => {
     const baseDeck = buildTestDeck();
 
     const makeArmorTestState = (disabled?: CardId[]): MatchState => {
@@ -155,33 +155,42 @@ describe('Regression tests for engine bug fixes', () => {
           ...(disabled ? { disableArmorOnCardIds: { opponent: disabled } } : {}),
         },
       });
-      const veemon = getCardById(175)!;
-      s.players.opponent.battleDigimon = {
-        cardId: 175,
-        stack: [],
-        currentHp: veemon.hp,
-        maxHp: veemon.hp,
-        effectiveSpecialty: 'Fire',
-      };
-      s.players.opponent.hand = [172, 27, 29, 14]; // #172 Flamedramon
+      s.players.opponent.battleDigimon = null;
+      s.players.opponent.hand = [175, 27, 29, 14]; // #175 Veemon (R P)
       s.activePlayer = 'opponent';
-      s.phase = 'digivolve';
+      s.phase = 'rookiePlacement';
       return s;
     };
 
-    // Without restriction, opponent can Armor Digivolve Veemon -> Flamedramon
+    // Without restriction, opponent can deploy Veemon as any of its 3 Armor forms or Normal Rookie
     const allowedState = makeArmorTestState(undefined);
-    expect(
-      getLegalActions(allowedState, 'opponent').some((a) => a.type === 'armorDigivolve')
-    ).toBe(true);
+    const allowedVeemonArmorActs = getLegalActions(allowedState, 'opponent').filter(
+      (a) => a.type === 'placeRookie' && a.handIndex === 0 && a.armorCardId !== undefined
+    );
+    expect(allowedVeemonArmorActs.map((a) => (a as { armorCardId?: CardId }).armorCardId)).toEqual([
+      172, 173, 185,
+    ]);
 
-    // With Veemon (#175) in disableArmorOnCardIds, armorDigivolve is illegal
+    // With Veemon (#175) in disableArmorOnCardIds, Armor deployment options are blocked while Normal Rookie stays legal
     const blockedState = makeArmorTestState([175]);
+    const blockedActs = getLegalActions(blockedState, 'opponent');
     expect(
-      getLegalActions(blockedState, 'opponent').some((a) => a.type === 'armorDigivolve')
+      blockedActs.some(
+        (a) => a.type === 'placeRookie' && a.handIndex === 0 && a.armorCardId !== undefined
+      )
     ).toBe(false);
+    expect(
+      blockedActs.some(
+        (a) => a.type === 'placeRookie' && a.handIndex === 0 && a.armorCardId === undefined
+      )
+    ).toBe(true);
     expect(() =>
-      applyAction(blockedState, { type: 'armorDigivolve', side: 'opponent', handIndex: 0 })
+      applyAction(blockedState, {
+        type: 'placeRookie',
+        side: 'opponent',
+        handIndex: 0,
+        armorCardId: 172,
+      })
     ).toThrow();
   });
 
@@ -243,8 +252,8 @@ describe('Regression tests for engine bug fixes', () => {
     );
   });
 
-  it('6. canUseDigivolveOptionCard rejects Digivolve Options with no usable target in hand and accepts valid targets', () => {
-    const state = createMatch({
+  it('6. Digivolve Options (#293-#300) are always usable in digivolve phase (discarded if no target) and never usable as Support', () => {
+    let state = createMatch({
       playerDeck: buildTestDeck(),
       opponentDeck: buildTestDeck(),
       seed: 333,
@@ -265,46 +274,55 @@ describe('Regression tests for engine bug fixes', () => {
     state.activePlayer = 'player';
     state.phase = 'digivolve';
 
-    // Holding #299 Speed Digivolve with no Champion/Ultimate Digimon in hand -> disallowed
-    state.players.player.hand = [299, 27, 264, 266];
-    expect(
-      canUseDigivolveOptionCard(state.players.player, 299, {
-        handIndex: 0,
-        alreadyAddedDp: false,
-      })
-    ).toBe(false);
-    expect(
-      getLegalActions(state, 'player').some(
-        (a) => a.type === 'useDigivolveOption' && a.cardId === 299
-      )
-    ).toBe(false);
+    // Holding #299 Speed, #297 Warp, #298 De-Armor, #300 Digi-devolve with NO usable evolution/devolve target:
+    // all Digivolve Options are still playable in the digivolve phase and are discarded to offline when played.
+    state.players.player.hand = [299, 297, 298, 300];
+    for (const [idx, optId] of [299, 297, 298, 300].entries()) {
+      expect(
+        canUseDigivolveOptionCard(state.players.player, optId, {
+          handIndex: idx,
+          alreadyAddedDp: false,
+        })
+      ).toBe(true);
+      expect(
+        getLegalActions(state, 'player').some(
+          (a) => a.type === 'useDigivolveOption' && a.cardId === optId
+        )
+      ).toBe(true);
+    }
 
-    // Holding #297 Warp Digivolve with only Champion #014 Greymon (no Ultimate) -> disallowed
-    state.players.player.hand = [297, 14, 27, 29];
-    state.players.player.dpSlot = [27, 27, 27];
-    state.players.player.dpTotal = 60;
-    expect(
-      canUseDigivolveOptionCard(state.players.player, 297, {
-        handIndex: 0,
-        alreadyAddedDp: false,
-      })
-    ).toBe(false);
+    // Play #299 Speed Digivolve with no Champion/Ultimate in hand -> discarded to offline cleanly
+    state = applyAction(state, { type: 'useDigivolveOption', side: 'player', handIndex: 0 });
+    expect(state.players.player.offline).toContain(299);
+    expect(state.players.player.hand).toEqual([297, 298, 300]);
 
-    // Holding #299 Speed Digivolve with compatible Champion #014 Greymon -> allowed
-    state.players.player.hand = [299, 14, 264, 266];
-    state.players.player.dpSlot = [];
-    state.players.player.dpTotal = 0;
-    expect(
-      canUseDigivolveOptionCard(state.players.player, 299, {
-        handIndex: 0,
-        alreadyAddedDp: false,
-      })
-    ).toBe(true);
-    expect(
-      getLegalActions(state, 'player').some(
-        (a) => a.type === 'useDigivolveOption' && a.cardId === 299
-      )
-    ).toBe(true);
+    // Transition to supportSelect -> Digivolve Options (#293-#300) must NEVER appear as playSupportFromHand actions
+    state.players.opponent.battleDigimon = {
+      cardId: 62,
+      stack: [],
+      currentHp: getCardById(62)!.hp,
+      maxHp: getCardById(62)!.hp,
+      effectiveSpecialty: 'Ice',
+    };
+    state.phase = 'attackSelect';
+    state.battle = {
+      firstAttacker: 'player',
+      defender: 'opponent',
+      chosenAttacks: { player: null, opponent: null },
+      effectiveAttacks: { player: null, opponent: null },
+      supportCards: { player: null, opponent: null },
+      supportDecided: { player: false, opponent: false },
+      computedPowers: { player: 0, opponent: 0 },
+    };
+    state = applyAction(state, { type: 'chooseAttack', side: 'player', slot: 'circle' });
+    state = applyAction(state, { type: 'chooseAttack', side: 'opponent', slot: 'circle' });
+    expect(state.phase).toBe('supportSelect');
+
+    const supportActions = getLegalActions(state, 'player');
+    expect(supportActions.some((a) => a.type === 'playSupportFromHand')).toBe(false);
+    expect(() =>
+      applyAction(state, { type: 'playSupportFromHand', side: 'player', handIndex: 0 })
+    ).toThrow();
   });
 
   it('7. enforces #299 Speed Digivolve notInAbnormal restriction against abnormal digivolve options (#296 Mutant, #297 Warp)', () => {
@@ -328,33 +346,22 @@ describe('Regression tests for engine bug fixes', () => {
     state.phase = 'digivolve';
 
     // With 0 DP and [297 Warp, 299 Speed, 9 MetalGreymon U, 264 Attack Chip],
-    // Warp + Speed combo is blocked by Speed Digivolve's notInAbnormal rule.
+    // both Digivolve Options can be played/discarded individually,
+    // but stacking #299 Speed onto #297 Warp is blocked by notInAbnormal so 0-DP MetalGreymon stays illegal.
     state.players.player.dpSlot = [];
     state.players.player.dpTotal = 0;
     state.players.player.hand = [297, 299, 9, 264];
-    expect(
-      canUseDigivolveOptionCard(state.players.player, 297, {
-        handIndex: 0,
-        alreadyAddedDp: false,
-      })
-    ).toBe(false);
-    expect(
-      canUseDigivolveOptionCard(state.players.player, 299, {
-        handIndex: 1,
-        alreadyAddedDp: false,
-      })
-    ).toBe(false);
 
-    // When player has 40 DP and plays #297 Warp Digivolve first, #299 Speed Digivolve cannot be stacked onto it.
-    state.players.player.dpSlot = [27, 29];
-    state.players.player.dpTotal = 40;
     state = applyAction(state, { type: 'useDigivolveOption', side: 'player', handIndex: 0 });
     expect(state.players.player.activeDigivolveModifier?.allowSkipLevel).toBe(true);
+    expect(state.players.player.offline).toContain(297);
+
+    // #299 Speed is playable (and discarded), yet notInAbnormal forbids evolving into #009 MetalGreymon via Warp+Speed
+    state = applyAction(state, { type: 'useDigivolveOption', side: 'player', handIndex: 0 });
+    expect(state.players.player.offline).toContain(299);
+    expect(state.players.player.activeDigivolveModifier?.notInAbnormal).toBe(true);
     expect(
-      canUseDigivolveOptionCard(state.players.player, 299, {
-        handIndex: 0,
-        alreadyAddedDp: false,
-      })
+      getLegalActions(state, 'player').some((a) => a.type === 'digivolve' && a.cardId === 9)
     ).toBe(false);
   });
 });

@@ -1144,20 +1144,28 @@ export function executeSingleOp(
           discardedTopCards.push(digimon.cardId);
           digimon.cardId = digimon.stack.pop()!;
         }
-        player.offline.push(...discardedTopCards);
+        // Virtual Armor ('A') forms do not belong to the 30-card deck and are never pushed to offline.
+        const nonArmorDiscarded = discardedTopCards.filter(
+          (cid) => getCardById(cid)?.level !== 'A',
+        );
+        if (nonArmorDiscarded.length > 0) {
+          player.offline.push(...nonArmorDiscarded);
+        }
 
         digimon.maxHp = targetUnderlyingCard.hp;
         digimon.currentHp = targetUnderlyingCard.hp;
         digimon.effectiveSpecialty = targetUnderlyingCard.specialty ?? 'Fire';
 
-        state.events.push({
-          type: 'cardsMoved',
-          side,
-          from: 'battle',
-          to: 'offline',
-          cardIds: discardedTopCards,
-          count: discardedTopCards.length,
-        });
+        if (nonArmorDiscarded.length > 0) {
+          state.events.push({
+            type: 'cardsMoved',
+            side,
+            from: 'battle',
+            to: 'offline',
+            cardIds: nonArmorDiscarded,
+            count: nonArmorDiscarded.length,
+          });
+        }
         state.events.push({
           type: 'devolved',
           side,
@@ -1300,6 +1308,7 @@ const BUILTIN_DIGIVOLVE_OPTION_EFFECTS: Record<number, CardEffectDef> = {
         op: 'devolve',
         target: 'self',
         levels: 1,
+        requireFromLevels: ['C', 'U'],
         onSuccess: [{ op: 'hp', target: 'self', mode: 'multiply', value: 2 }],
       },
     ],

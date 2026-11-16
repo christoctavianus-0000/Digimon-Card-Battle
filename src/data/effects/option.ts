@@ -1006,6 +1006,6 @@ export const OPTION_EFFECTS: EffectRegistry = {
   300: {
     cardId: 300,
     timing: 'digivolvePhase',
-    ops: [{ op: 'devolve', target: 'self', levels: 1, onSuccess: [{ op: 'hp', target: 'self', mode: 'multiply', value: 2 }] }],
+    ops: [{ op: 'devolve', target: 'self', levels: 1, requireFromLevels: ['C', 'U'], onSuccess: [{ op: 'hp', target: 'self', mode: 'multiply', value: 2 }] }],
   },
 };

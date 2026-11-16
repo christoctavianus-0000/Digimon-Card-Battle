@@ -12,7 +12,6 @@
 import { ALL_CARDS, getCardById } from '../data/cards';
 import { getCardEffect, isBattleSupportOption, isDigivolvePhaseOption } from '../data/effects';
 import {
-  ARMOR_LINEAGE,
   getLegalActions,
   getLevelRank,
   getTurnStarter,
@@ -845,18 +844,12 @@ export function computeSupportCardOpportunityCost(
 
     // Check if this card is a direct evolution target for our active Digimon
     if (active && activeCard) {
-      const isArmorTarget =
-        activeCard.level === 'R P' &&
-        card.level === 'A' &&
-        Boolean(ARMOR_LINEAGE[activeCard.id]?.includes(card.id));
       const isNextLevelMatch =
         card.specialty === active.effectiveSpecialty &&
         (((activeCard.level === 'R' || activeCard.level === 'R P') && card.level === 'C') ||
           (activeCard.level === 'C' && card.level === 'U'));
 
-      if (isArmorTarget) {
-        cost += 340;
-      } else if (isNextLevelMatch) {
+      if (isNextLevelMatch) {
         // Count how many copies of this evolution level/specialty we have in hand
         const duplicateCount = player.hand.filter((id) => {
           const c = getCardById(id);
@@ -890,12 +883,13 @@ export function computeSupportCardOpportunityCost(
 // ---------------------------------------------------------------------------
 
 /**
- * Scores a Rookie card for placement into the Battle Slot.
+ * Scores a Rookie card (or an immediate Partner -> Armor choice) for placement into the Battle Slot.
  */
 export function scoreRookieForPlacement(
   sanitizedState: MatchState,
   side: PlayerSide,
   handIndex: number,
+  armorCardId?: CardId,
 ): number {
   const player = sanitizedState.players[side];
   const oppSide = otherSide(side);
@@ -906,37 +900,59 @@ export function scoreRookieForPlacement(
   const card = getCardById(cardId);
   if (!card || !isRookieCard(cardId)) return -9999;
 
-  let score = card.hp * 1.15;
-  if (card.attacks) {
+  const armorCard = armorCardId !== undefined ? getCardById(armorCardId) : undefined;
+  if (armorCardId !== undefined && (!armorCard || armorCard.level !== 'A')) {
+    return -9999;
+  }
+
+  const deployedCard = armorCard ?? card;
+
+  let score = deployedCard.hp * 1.15;
+  if (deployedCard.attacks) {
     score +=
-      card.attacks.circle.power * 0.95 +
-      card.attacks.triangle.power * 0.7 +
-      card.attacks.x.power * 0.45;
+      deployedCard.attacks.circle.power * 0.95 +
+      deployedCard.attacks.triangle.power * 0.7 +
+      deployedCard.attacks.x.power * 0.45;
   }
 
-  // Partner Rookie bonus (especially if matching Armor is in hand)
-  if (card.level === 'R P') {
-    score += 120;
-    const armors = ARMOR_LINEAGE[card.id] ?? [];
-    const hasMatchingArmorInHand = player.hand.some((id) => armors.includes(id));
-    if (hasMatchingArmorInHand) {
-      score += 650;
+  if (armorCard) {
+    // Immediate 0-DP Armor Evolution preserves hand cards & DP Slot while entering stronger
+    score += 350;
+    const hasArmorCrush = player.hand.some((id, idx) => idx !== handIndex && id === 294);
+    if (hasArmorCrush) {
+      const hasMatchingEvo = player.hand.some((id, idx) => {
+        if (idx === handIndex) return false;
+        const other = getCardById(id);
+        return (
+          other &&
+          other.kind === 'Digimon' &&
+          (other.level === 'C' || other.level === 'U') &&
+          other.specialty === armorCard.specialty
+        );
+      });
+      if (hasMatchingEvo) {
+        score += 140;
+      }
     }
-  }
+  } else {
+    if (card.level === 'R P') {
+      score += 90;
+    }
 
-  // Check matching Champion / Ultimate evolutions in hand
-  for (let i = 0; i < player.hand.length; i++) {
-    if (i === handIndex) continue;
-    const other = getCardById(player.hand[i]!);
-    if (!other || other.kind !== 'Digimon') continue;
-    if (other.specialty === card.specialty) {
-      if (other.level === 'C') {
-        score += 380;
-        if (player.dpTotal + 20 >= other.dp) {
-          score += 180;
+    // Check matching Champion / Ultimate evolutions in hand for normal Rookie deployment
+    for (let i = 0; i < player.hand.length; i++) {
+      if (i === handIndex) continue;
+      const other = getCardById(player.hand[i]!);
+      if (!other || other.kind !== 'Digimon') continue;
+      if (other.specialty === card.specialty) {
+        if (other.level === 'C') {
+          score += 380;
+          if (player.dpTotal + 20 >= other.dp) {
+            score += 180;
+          }
+        } else if (other.level === 'U') {
+          score += 150;
         }
-      } else if (other.level === 'U') {
-        score += 150;
       }
     }
   }
@@ -944,12 +960,12 @@ export function scoreRookieForPlacement(
   // Check matchup against Opponent's Active Digimon if present
   if (oppActive) {
     const oppCard = getCardById(oppActive.cardId);
-    const myXEff = card.attacks?.x.effect;
+    const myXEff = deployedCard.attacks?.x.effect;
     if (myXEff?.type === 'foeX3' && myXEff.specialty === oppActive.effectiveSpecialty) {
       score += 350;
     }
     const oppXEff = oppCard?.attacks?.x.effect;
-    if (oppXEff?.type === 'foeX3' && oppXEff.specialty === card.specialty) {
+    if (oppXEff?.type === 'foeX3' && oppXEff.specialty === deployedCard.specialty) {
       score -= 400;
     }
   }
@@ -1045,8 +1061,10 @@ function isDigivolveOptionUsefulNow(
         );
       });
     case 300: {
-      // Digi-devolve (U->C or C->R, doubles revealed HP)
-      if (active.stack.length === 0) return false;
+      // Digi-devolve (U->C or C->R/R P, doubles revealed HP)
+      if ((activeCard.level !== 'C' && activeCard.level !== 'U') || active.stack.length === 0) {
+        return false;
+      }
       const under = getCardById(active.stack[active.stack.length - 1]!);
       return Boolean(under && active.currentHp <= 280 && under.hp * 2 > active.currentHp + 350);
     }
@@ -1175,7 +1193,7 @@ export function chooseNormalAction(state: MatchState, side: PlayerSide): Action 
       let bestScore = -Infinity;
       for (const action of legalActions) {
         if (action.type !== 'placeRookie') continue;
-        const s = scoreRookieForPlacement(sanitizedState, side, action.handIndex);
+        const s = scoreRookieForPlacement(sanitizedState, side, action.handIndex, action.armorCardId);
         if (s > bestScore) {
           bestScore = s;
           bestAction = action;
@@ -1188,20 +1206,7 @@ export function chooseNormalAction(state: MatchState, side: PlayerSide): Action 
       const active = player.battleDigimon;
       const activeCard = active ? getCardById(active.cardId) : undefined;
 
-      // 1. Prioritize Armor Digivolve (0 DP, keeps DP Slot intact!)
-      const armorActions = legalActions.filter(
-        (a): a is Extract<Action, { type: 'armorDigivolve' }> => a.type === 'armorDigivolve',
-      );
-      if (armorActions.length > 0) {
-        armorActions.sort((a, b) => {
-          const ca = getCardById(player.hand[a.handIndex]!);
-          const cb = getCardById(player.hand[b.handIndex]!);
-          return (cb?.hp ?? 0) - (ca?.hp ?? 0);
-        });
-        return armorActions[0]!;
-      }
-
-      // 2. Normal / Option-modified Digivolve (do BEFORE addToDp so existing DP is used before banking new DP!)
+      // 1. Normal / Option-modified Digivolve (do BEFORE addToDp so existing DP is used before banking new DP!)
       const digiActions = legalActions.filter(
         (a): a is Extract<Action, { type: 'digivolve' }> => a.type === 'digivolve',
       );

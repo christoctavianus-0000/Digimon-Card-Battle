@@ -30,7 +30,10 @@ import {
  */
 function countPlayerCardsInAllZones(state: MatchState, side: PlayerSide): number {
   const p = state.players[side];
-  const battleCount = p.battleDigimon ? 1 + p.battleDigimon.stack.length : 0;
+  const battleCount = p.battleDigimon
+    ? (getCardById(p.battleDigimon.cardId)?.level === 'A' ? 0 : 1) +
+      p.battleDigimon.stack.filter((id) => getCardById(id)?.level !== 'A').length
+    : 0;
   const supportCount = state.battle?.supportCards[side] ? 1 : 0;
   return (
     p.online.length +
@@ -279,7 +282,8 @@ describe('Task 8: QA & Headless AI-vs-AI Simulation Suite', () => {
         activeCard: CardData,
         handCard0: CardId,
       ): MatchState['players']['player'] => {
-        const stack: CardId[] = [27, 14]; // R -> C underneath
+        // Level A active Digimon are virtual evolutions whose stack contains the underlying 3 deck cards
+        const stack: CardId[] = activeCard.level === 'A' ? [175, 27, 14] : [27, 14];
         const hand: CardId[] = [handCard0, 27, 62, 264];
         const dpSlot: CardId[] = [27, 29, 62];
         const offline: CardId[] = [14, 15, 264, 266, 27];
@@ -297,7 +301,7 @@ describe('Task 8: QA & Headless AI-vs-AI Simulation Suite', () => {
           118, // Devimon (C, Darkness)
           155, // Numemon (C, Rare)
           2, // WarGreymon (U, Fire)
-          172, // Flamedramon (A, Fire)
+          183, // Patamon (R P, Nature)
           266, // Recovery Floppy (Option)
         ];
 
@@ -477,7 +481,10 @@ describe('Task 8: QA & Headless AI-vs-AI Simulation Suite', () => {
           dpSlot: CardId[],
         ): MatchState['players']['player'] => {
           const activeCard = mustGetCardById(activeCardId);
-          const usedCount = 1 + stack.length + hand.length + dpSlot.length;
+          const nonArmorBattleCount =
+            (activeCard.level === 'A' ? 0 : 1) +
+            stack.filter((id) => getCardById(id)?.level !== 'A').length;
+          const usedCount = nonArmorBattleCount + hand.length + dpSlot.length;
           const offline: CardId[] = [264, 266];
           const onlineCount = DECK_SIZE - usedCount - offline.length;
           const online: CardId[] = Array.from({ length: onlineCount }, (_, i) =>
@@ -693,7 +700,7 @@ describe('Task 8: QA & Headless AI-vs-AI Simulation Suite', () => {
           assertMatchStateInvariants(s1, `298 De-Armor Digivolve (${side}) after option`);
           expect(s1.players[side].battleDigimon?.cardId).toBe(175);
           expect(s1.players[side].battleDigimon?.stack).toHaveLength(0);
-          expect(s1.players[side].offline).toContain(172);
+          expect(s1.players[side].offline).not.toContain(172);
           expect(s1.players[side].offline).toContain(298);
         }
 
@@ -772,18 +779,23 @@ describe('Task 8: QA & Headless AI-vs-AI Simulation Suite', () => {
       }
 
       // Also verify that playing a Digivolve-phase Option card (293..300) via playSupportFromDeckTop
-      // safely fizzles without throwing or violating invariants
+      // safely fizzles without throwing, emitting supportTriggered, or violating invariants
       for (let cardId = 293; cardId <= 300; cardId++) {
         const state = createControlledSupportBattleState({
           supportCardId: 266,
           supportSide: 'player',
           seed: 60000 + cardId,
         });
+        const eventsBefore = state.events.length;
         state.players.player.online[0] = cardId;
         const s1 = applyAction(state, { type: 'playSupportFromDeckTop', side: 'player' });
         const s2 = applyAction(s1, { type: 'passSupport', side: 'opponent' });
         assertMatchStateInvariants(s2, `DeckTopFizzle #${cardId} after resolveBattle`);
         expect(s2.players.player.offline).toContain(cardId);
+        const newEvents = s2.events.slice(eventsBefore);
+        expect(
+          newEvents.some((e) => e.type === 'supportTriggered' && e.side === 'player')
+        ).toBe(false);
       }
 
       // Direct unit call to resolveBattle export to ensure direct invocation works cleanly

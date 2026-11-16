@@ -10,7 +10,7 @@ This document specifies the 1:1 battle engine rules for **Digimon Digital Card B
 2. **Copy Limits**:
    - **Standard Cards** (Level `R`, `C`, `U` Digimon and Option cards): Maximum **4 copies** of any single card ID (`maxCopiesPerCard = 4`).
    - **Partner Cards** (`level === 'R P'`, cards `175, 182, 183, 184, 187, 190`): Maximum **1 copy** per Partner card ID (`maxPartnerCopies = 1`), and at most **3 Partner cards total** in a deck (`maxTotalPartners = 3`, configurable).
-   - **Armor Cards** (`level === 'A'`, cards `172–174, 176–181, 185–186, 188–189`): Maximum **4 copies** (or configurable `maxArmorCopies = 4`).
+   - **Armor Cards** (`level === 'A'`, cards `172–174, 176–181, 185–186, 188–189`): **Cannot be placed in a deck** (deck limit `0`). Armor forms are virtual evolutions chosen directly when deploying a Partner (`R P`) card during Rookie Placement.
 3. **Rookie Requirement**: A valid deck should contain at least 1 Level `R` or `R P` Digimon card (`requireRookieInDeck = true`).
 
 ---
@@ -77,21 +77,21 @@ In *Digimon Digital Card Battle*, a **Turn** consists of **both players** comple
 
 1. **Turn Player (`activePlayer`)** executes:
    - **Draw Phase**: Draws cards from `online` until `hand.length === 4` (if `hand.length >= 4`, draws 0 cards).
-   - **Entry Step** (only if Turn Player's `battle` zone is empty after being KO'd last turn): Must place 1 Level `R` or `R P` Digimon from Hand into `battle`. (See [Section 8.1](#81-ko--new-rookie-entry-and-redraw) if no Rookie is in Hand).
+   - **Entry Step** (only if Turn Player's `battle` zone is empty after being KO'd last turn or at match start): Must place 1 Level `R` or `R P` Digimon from Hand into `battle`. When placing a **Partner (`R P`)** card, the player chooses either to **Armor Evolve** it immediately at `0 DP` into one of its Armor (`A`) forms (Veemon has 3; the other Partners have 2) or to deploy it as a **Normal Rookie (`R P`)** that can Digivolve normally into Champion (`C`) and Ultimate (`U`) forms. (See [Section 8.1](#81-ko--new-rookie-entry-and-redraw) if no Rookie is in Hand).
    - **Digivolve / Preparation Phase**:
      - May add **at most 1 Digimon card** from Hand to `dpSlot` (`+P`).
-     - May play Digivolve-phase Option cards (`timing: 'digivolvePhase'`).
-     - May Digivolve their active Digimon (one or more steps, e.g., `R -> C -> U`, provided DP and level rules are met).
+     - May play Digivolve-phase Option cards (`timing: 'digivolvePhase'`, Cards `293–300`) whenever they have an active Digimon — even if the Option produces no Digivolution (in which case it is simply discarded to `offline`).
+     - May Digivolve their active Digimon (one or more steps, e.g., `R -> C -> U` or `R P -> C -> U`, provided DP and level rules are met).
 2. **Non-Turn Player (`opponentPlayer`)** executes:
    - **Draw Phase**: Draws cards from `online` until `hand.length === 4`.
-   - **Entry Step** (only if Non-Turn Player's `battle` zone is empty after being KO'd last turn): Must place 1 Level `R` or `R P` Digimon from Hand into `battle`.
+   - **Entry Step** (only if Non-Turn Player's `battle` zone is empty after being KO'd last turn): Must place 1 Level `R` or `R P` Digimon from Hand into `battle` (with the Partner Armor / Normal Rookie choice if placing `R P`).
    - **Digivolve / Preparation Phase**:
      - May add **at most 1 Digimon card** from Hand to `dpSlot` (`+P`).
-     - May play Digivolve-phase Option cards.
+     - May play Digivolve-phase Option cards (`293–300`) anytime while having an active Digimon.
      - May Digivolve their active Digimon.
 3. **Shared Battle Phase**:
    - **Attack Choice Step**: Both players secretly/sequentially select an attack (`circle` ○, `triangle` △, or `x` ✕) on their Active Digimon.
-   - **Support Step**: Both players may play at most **1 Support Card** (either a card from `hand` OR blind-played from the **top of `online` deck**), or pass.
+   - **Support Step**: Both players may play at most **1 Battle Support Card** (either a Digimon or Battle Support Option `#191–#292` from `hand` — never Digivolve Options `#293–#300` — OR blind-play the **top of `online` deck**), or pass.
      - *Turn Order in Support Selection*: Turn Player selects/passes first, then Non-Turn Player selects/passes (or simultaneous selection in UI; revealed and resolved in defined order).
    - **Combat Resolution Step**: Support effects, X-attack abilities, First Attack Damage, Second Attack Damage, Counterattacks, and Post-Attack effects resolve.
    - **Post-Battle Cleanup Step**: Support cards go to `offline`; KO'd Digimon stacks go to `offline` and award +1 KO point; surviving Digimon **keep their current HP and active status** into the next turn.
@@ -111,15 +111,15 @@ During a player's Preparation Phase, they may perform the following actions in a
 - **Effect**: The chosen card moves from `hand` to the top of `dpSlot`. The player's accumulated DP increases by that card's printed `pp` (typically `10`, `20`, or `30`).
 
 ### 6.2 Playing Digivolve-Phase Option Cards
-Option cards with `timing === 'digivolvePhase'` (Cards `293–300`) are played from `hand` into the `support` slot during the Preparation Phase, resolve immediately, and move to `offline`:
+Option cards with `timing === 'digivolvePhase'` (Cards `293–300`) can **only** be played during the Preparation / Digivolve Phase while the player has an active Digimon (never from hand during Battle Support Step). They are always playable in the Preparation Phase regardless of whether the resulting effect can digivolve a card in hand (if it does not, the Option card is simply discarded to `offline`):
 - **293 Download Digivolve**: Next digivolution this phase ignores Specialty, Level, and DP requirements (`ignoreSpecialty`, `ignoreLevel`, `ignoreDp`).
 - **294 ArmorCrush Digivolve**: Allows an active Level `A` Digimon to digivolve to a Level `C` or `U` Digimon of matching Specialty (DP is still required and consumed!).
 - **295 Special Digivolve**: Next digivolution this phase ignores Specialty and grants `+20` virtual DP (`ignoreSpecialty`, `extraDp: 20`).
 - **296 Mutant Digivolve**: Allows an active Digimon to digivolve into another Digimon of the **same Level** (`R->R`, `C->C`, `U->U`), ignoring Specialty, while still requiring and consuming DP (`allowSameLevel`, `ignoreSpecialty`).
 - **297 Warp Digivolve**: Allows an active Level `R` (or `R P`) Digimon to digivolve directly to Level `U` of matching Specialty, requiring and consuming only the Level `U` card's printed DP (`allowSkipLevel`).
-- **298 De-Armor Digivolve**: Downgrades an active Level `A` Digimon back to the Level `R` / `R P` card beneath it in the `battle` stack (top Level `A` card is discarded to `offline`; underlying `R`/`R P` becomes active with its printed max HP).
+- **298 De-Armor Digivolve**: Downgrades an active Level `A` Digimon back to the Level `R` / `R P` card beneath it in the `battle` stack (top virtual Level `A` form disappears cleanly without entering `offline`; underlying `R`/`R P` becomes active with its printed max HP).
 - **299 Speed Digivolve**: Next digivolution this phase ignores DP requirements (`ignoreDp`). Does not consume DP Slot cards!
-- **300 Digi-devolve**: Downgrades own digivolved Digimon (`U -> C` or `C -> R`) by discarding the top card of the `battle` stack to `offline`. When successful, the revealed lower-level Digimon's HP becomes **double** its printed max HP (`hp = maxHp * 2`).
+- **300 Digi-devolve**: Downgrades own digivolved Digimon (`U -> C` or `C -> R`/`R P`) by discarding the top card of the `battle` stack to `offline`. When successful, the revealed lower-level Digimon's HP becomes **double** its printed max HP (`hp = maxHp * 2`). If used on a non-`C`/`U` or unstacked Digimon, the Option has no effect and is simply discarded to `offline`.
 
 ### 6.3 Normal Digivolution (`R -> C`, `C -> U`)
 To normally digivolve an active Digimon using a card from `hand`:
@@ -141,22 +141,23 @@ To normally digivolve an active Digimon using a card from `hand`:
    - The Active Digimon's `hp` is set to the new card's printed `hp` (`maxHp`), **regardless of how much damage the previous form had taken**.
    - **Same-Specialty Digivolve Bonus**: In DDCB, normal digivolution resets HP to the new card's printed `hp` (or if `sameSpecialtyHpBonus` is configured, adds the bonus; default is `0` / exact printed HP).
 
-### 6.4 Armor Digivolution (`R P -> A`)
-Level `A` (Armor) Digimon have special digivolution rules in DDCB:
-1. **Base Requirement**: Can only digivolve from a **Partner Rookie (`level === 'R P'`)** currently active in the `battle` zone (specifically matching the Partner lineage or matching Specialty/0 DP per card data; in DDCB, each Partner Digimon has designated Armor forms, or any `R P` can Armor Digivolve into matching-lineage `A`).
+### 6.4 Armor Evolution (`R P -> A` on Entry)
+Level `A` (Armor) Digimon are virtual evolutions invoked directly when playing a **Partner Rookie (`level === 'R P'`)** during Rookie Placement:
+1. **Partner Choice on Entry (Veemon = 3, Others = 2)**:
+   - Whenever a player places a Partner (`R P`) card into the empty `battle` zone (at match start or after a KO), they choose either to evolve it immediately into one of its canonical Armor (`A`) forms (with the Partner `R P` card placed underneath as its stack) **or** to deploy it as a **Normal Rookie (`R P`)**.
+   - If kept as a Normal Rookie (`R P`), it behaves as a standard Rookie and may digivolve normally into matching Champion (`C`) and Ultimate (`U`) forms in subsequent Digivolve phases.
    - Specifically, the canonical Partner $\rightarrow$ Armor mappings in DDCB are:
-     - **175 Veemon (`R P`, Fire)** $\rightarrow$ `172 Flamedramon` (`A`, Fire), `173 Magnamon` (`A`, Fire), `185 Raidramon` (`A`, Darkness)
-     - **182 Hawkmon (`R P`, Nature)** $\rightarrow$ `179 Halsemon` (`A`, Nature), `188 Shurimon` (`A`, Rare)
-     - **183 Patamon (`R P`, Nature)** $\rightarrow$ `174 Baronmon` (`A`, Fire), `180 Pegasusmon` (`A`, Nature)
-     - **184 Gatomon (`R P`, Nature)** $\rightarrow$ `178 Tylomon` (`A`, Ice), `181 Nefertimon` (`A`, Nature)
-     - **187 Wormmon (`R P`, Darkness)** $\rightarrow$ `177 Quetzalmon` (`A`, Ice), `186 Shadramon` (`A`, Darkness)
-     - **190 Armadillomon (`R P`, Rare)** $\rightarrow$ `176 Submarimon` (`A`, Ice), `189 Digmon` (`A`, Rare)
-   - *(Configurable via `strictArmorLineage = true`; if `false`, any `R P` can Armor Digivolve to any `A`).*
-2. **Zero DP Cost & DP Slot Preservation**:
-   - All Level `A` cards have `dp: 0`.
-   - Armor Digivolving requires **0 DP** and **DOES NOT discard cards in the `dpSlot`!** The `dpSlot` remains intact.
-3. **HP on Armor Digivolution**:
-   - Sets `hp` to the Armor Digimon's printed `hp`.
+     - **175 Veemon (`R P`, Fire)** $\rightarrow$ `172 Flamedramon` (`A`, Fire), `173 Magnamon` (`A`, Fire), `185 Raidramon` (`A`, Darkness) **(3 forms)**
+     - **182 Hawkmon (`R P`, Nature)** $\rightarrow$ `179 Halsemon` (`A`, Nature), `188 Shurimon` (`A`, Rare) **(2 forms)**
+     - **183 Patamon (`R P`, Nature)** $\rightarrow$ `174 Baronmon` (`A`, Fire), `180 Pegasusmon` (`A`, Nature) **(2 forms)**
+     - **184 Gatomon (`R P`, Nature)** $\rightarrow$ `178 Tylomon` (`A`, Ice), `181 Nefertimon` (`A`, Nature) **(2 forms)**
+     - **187 Wormmon (`R P`, Darkness)** $\rightarrow$ `177 Quetzalmon` (`A`, Ice), `186 Shadramon` (`A`, Darkness) **(2 forms)**
+     - **190 Armadillomon (`R P`, Rare)** $\rightarrow$ `176 Submarimon` (`A`, Ice), `189 Digmon` (`A`, Rare) **(2 forms)**
+2. **Zero DP Cost, DP Slot Preservation, & 30-Card Conservation**:
+   - Armor cards cannot be added to a deck (`0` copies allowed).
+   - Evolving into Armor on Partner entry requires **0 DP** and **DOES NOT discard cards in the `dpSlot`!**
+   - Sets active `hp` to the Armor Digimon's printed `hp`.
+   - Because Armor forms do not come from the 30-card deck, when an active Armor Digimon is KO'd or De-Armored (`#298`), only the underlying deck cards in its stack (`[partnerId, ...]`) move to `offline` — the virtual Level `A` card never enters `offline`, `hand`, or `online`.
 
 ---
 
@@ -170,8 +171,8 @@ Both players select one of their Active Digimon's three attacks:
 
 ### 7.2 Step 2 — Support / Option Selection
 Each player chooses one of three options for their Support Slot:
-1. **Play from Hand**: Select 1 card from `hand` (either an `Option` card or a `Digimon` card to be used for its `supportEffect`) and place it face-down in `support`.
-2. **Play from Top of Online Deck (Blind Support)**: Take the top card (`index 0`) of `online` without looking at it first and place it face-down in `support`. (Requires `online.length >= 1`).
+1. **Play from Hand**: Select 1 Battle-Support card from `hand` (a `Digimon` card or a Battle Support `Option` card `#191–#292` — **never** a Digivolve-phase Option `#293–#300`) and place it face-down in `support`.
+2. **Play from Top of Online Deck (Blind Support)**: Take the top card (`index 0`) of `online` without looking at it first and place it face-down in `support`. (Requires `online.length >= 1`). If a Digivolve-phase Option card (`#293–#300`) is blind-flipped here, it has no Support effect and fizzles directly to `offline` during cleanup.
 3. **Pass**: Play no Support card.
 
 ### 7.3 Step 3 — Pre-Combat Effect Resolution Order
@@ -372,7 +373,7 @@ flowchart TD
     InitDraw --> MulliganCheck{"Both have >= 1 Level R / R P?"}
     MulliganCheck -- "No" --> Redraw["Reveal, Shuffle Hand into Online Deck, Draw 4"]
     Redraw --> MulliganCheck
-    MulliganCheck -- "Yes" --> PlaceInit["Both Place 1 Level R / R P Face-Down & Reveal"]
+    MulliganCheck -- "Yes" --> PlaceInit["Both Place 1 R or R P (Partner may choose Armor or Normal Rookie)"]
     PlaceInit --> TurnStart["Start of Turn (Active Player = P1, then alternates)"]
 
     subgraph Prep["1. Preparation Phase (Active Player first, then Opponent)"]
@@ -383,9 +384,9 @@ flowchart TD
         EmptyBattleCheck -- "Yes" --> HasRookie{"Has R / R P in Hand?"}
         HasRookie -- "No" --> DiscardHandRedraw["Discard Hand to Offline & Draw 4 from Online"]
         DiscardHandRedraw --> DeckOutCheck
-        HasRookie -- "Yes" --> PlaceRookie["Place 1 R / R P into Battle Area (Full HP)"]
+        HasRookie -- "Yes" --> PlaceRookie["Place 1 R / R P (or Partner Armor A) into Battle Area"]
         EmptyBattleCheck -- "No" --> PrepActions
-        PlaceRookie --> PrepActions["Player Actions (Any Order):<br/>• Add max 1 Digimon from Hand to DP Slot (+P)<br/>• Play Digivolve-Phase Option Cards<br/>• Digivolve Active Digimon (R→C→U or R P→A)"]
+        PlaceRookie --> PrepActions["Player Actions (Any Order):<br/>• Add max 1 Digimon from Hand to DP Slot (+P)<br/>• Play Digivolve-Phase Option Cards (#293–#300; discarded if unused)<br/>• Digivolve Active Digimon (R/R P→C→U)"]
     end
 
     PrepActions --> BattlePhase["2. Shared Battle Phase"]
