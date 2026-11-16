@@ -5,6 +5,7 @@
  */
 
 import { getCardById } from '../data/cards';
+import { getEffectiveCardData, getEffectivePartnerSupportEffect } from '../data/digiParts';
 import { EFFECT_REGISTRY } from '../data/effects';
 import type {
   AttackSlot,
@@ -22,6 +23,7 @@ import type {
   Level,
   MatchState,
   NumMode,
+  PartnerConfigMap,
   PlayerSide,
   Selection,
   Specialty,
@@ -98,15 +100,50 @@ export function matchesLevelList(cardLevel: Level | null | undefined, allowed: r
 }
 
 /**
- * Sums the `plusP` values of all cards currently in a DP slot.
+ * Sums the `plusP` values of all cards currently in a DP slot, factoring in Partner Digi-Parts.
  */
-export function computeDpTotal(dpSlot: readonly CardId[]): number {
+export function computeDpTotal(
+  dpSlot: readonly CardId[],
+  partnerConfigs?: PartnerConfigMap,
+): number {
   let total = 0;
   for (const id of dpSlot) {
-    const card = getCardById(id);
+    const card = partnerConfigs ? getEffectiveCardData(id, partnerConfigs) : getCardById(id);
     if (card) total += card.plusP;
   }
   return total;
+}
+
+/**
+ * Returns the base (Partner Digi-Parts + statPenaltyDivisor adjusted) slot attack powers
+ * for `side`'s currently active Digimon.
+ */
+export function getActiveDigimonSlotPowers(
+  state: MatchState,
+  side: PlayerSide,
+): Record<AttackSlot, number> {
+  const active = state.players[side].battleDigimon;
+  if (!active) return { circle: 0, triangle: 0, x: 0 };
+  const card =
+    getEffectiveCardData(active.cardId, state.config.partnerConfig?.[side]) ??
+    getCardById(active.cardId);
+  if (!card?.attacks) return { circle: 0, triangle: 0, x: 0 };
+
+  const raw: Record<AttackSlot, number> = {
+    circle: card.attacks.circle.power,
+    triangle: card.attacks.triangle.power,
+    x: card.attacks.x.power,
+  };
+
+  const divisor = active.statPenaltyDivisor;
+  if (divisor && divisor > 1) {
+    return {
+      circle: applyNumericMode(raw.circle, 'divide', divisor, 'attackPower'),
+      triangle: applyNumericMode(raw.triangle, 'divide', divisor, 'attackPower'),
+      x: applyNumericMode(raw.x, 'divide', divisor, 'attackPower'),
+    };
+  }
+  return raw;
 }
 
 /**
@@ -128,23 +165,10 @@ export function getEffectiveAttack(state: MatchState, side: PlayerSide): AttackS
 export function createInitialSlotPowers(
   state: MatchState,
 ): Record<PlayerSide, Record<AttackSlot, number>> {
-  const result: Record<PlayerSide, Record<AttackSlot, number>> = {
-    player: { circle: 0, triangle: 0, x: 0 },
-    opponent: { circle: 0, triangle: 0, x: 0 },
+  return {
+    player: getActiveDigimonSlotPowers(state, 'player'),
+    opponent: getActiveDigimonSlotPowers(state, 'opponent'),
   };
-
-  for (const side of ['player', 'opponent'] as const) {
-    const active = state.players[side].battleDigimon;
-    if (!active) continue;
-    const card = getCardById(active.cardId);
-    if (!card?.attacks) continue;
-    result[side] = {
-      circle: card.attacks.circle.power,
-      triangle: card.attacks.triangle.power,
-      x: card.attacks.x.power,
-    };
-  }
-  return result;
 }
 
 /**
@@ -964,7 +988,7 @@ export function executeSingleOp(
             discarded.push(popped);
           }
         }
-        player.dpTotal = computeDpTotal(player.dpSlot);
+        player.dpTotal = computeDpTotal(player.dpSlot, state.config.partnerConfig?.[side]);
         player.offline.push(...discarded);
         totalMoved += discarded.length;
         if (discarded.length > 0) {
@@ -1129,7 +1153,9 @@ export function executeSingleOp(
 
         const targetStackIdx = digimon.stack.length - levelsToDevolve;
         const targetUnderlyingCardId = digimon.stack[targetStackIdx]!;
-        const targetUnderlyingCard = getCardById(targetUnderlyingCardId);
+        const targetUnderlyingCard =
+          getEffectiveCardData(targetUnderlyingCardId, state.config.partnerConfig?.[side]) ??
+          getCardById(targetUnderlyingCardId);
         if (!targetUnderlyingCard) continue;
 
         if (op.toLevel) {
@@ -1152,8 +1178,14 @@ export function executeSingleOp(
           player.offline.push(...nonArmorDiscarded);
         }
 
-        digimon.maxHp = targetUnderlyingCard.hp;
-        digimon.currentHp = targetUnderlyingCard.hp;
+        const revealedHasPenalty =
+          targetUnderlyingCard.level === 'C' && digimon.stack.length === 0;
+        const baseMaxHp = revealedHasPenalty
+          ? applyNumericMode(targetUnderlyingCard.hp, 'divide', 2, 'hp')
+          : targetUnderlyingCard.hp;
+        digimon.statPenaltyDivisor = revealedHasPenalty ? 2 : undefined;
+        digimon.maxHp = baseMaxHp;
+        digimon.currentHp = baseMaxHp;
         digimon.effectiveSpecialty = targetUnderlyingCard.specialty ?? 'Fire';
 
         if (nonArmorDiscarded.length > 0) {
@@ -1225,7 +1257,11 @@ export function executeSingleOp(
         count: 1,
       });
 
-      const effectDef = resolveCardEffectDef(topCardId, ctx.effectRegistry);
+      const effectDef = resolveCardEffectDef(
+        topCardId,
+        ctx.effectRegistry,
+        state.config.partnerConfig?.[targetDeckSide],
+      );
       if (effectDef && (effectDef.timing === 'support' || effectDef.timing === 'both')) {
         ctx.recursionDepth = depth + 1;
         executeEffectOps(effectDef.ops, ctx);
@@ -1316,17 +1352,22 @@ const BUILTIN_DIGIVOLVE_OPTION_EFFECTS: Record<number, CardEffectDef> = {
 };
 
 /**
- * Resolves a card's `CardEffectDef` from custom registry, global registry, or built-in definitions.
+ * Resolves a card's `CardEffectDef` from custom registry, global registry, equipped Partner Digi-Parts, or built-in definitions.
  */
 export function resolveCardEffectDef(
   cardId: CardId,
   customRegistry?: EffectRegistry,
+  partnerConfigs?: PartnerConfigMap,
 ): CardEffectDef | undefined {
   if (customRegistry && customRegistry[cardId]) {
     return customRegistry[cardId];
   }
   if (globalEffectRegistry && globalEffectRegistry[cardId]) {
     return globalEffectRegistry[cardId];
+  }
+  const partnerOverride = getEffectivePartnerSupportEffect(cardId, partnerConfigs);
+  if (partnerOverride) {
+    return partnerOverride;
   }
   if (EFFECT_REGISTRY[cardId]) {
     return EFFECT_REGISTRY[cardId];

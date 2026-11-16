@@ -23,9 +23,11 @@ import type {
   GameEvent,
   MatchPhase,
   MatchState,
+  PartnerConfigMap,
   PlayerSide,
 } from '../types/game';
 import { getCardById } from '../data/cards';
+import { getEffectiveCardData } from '../data/digiParts';
 import {
   ActiveDigimonBattleSlot,
   AttackSymbolSvg,
@@ -52,6 +54,7 @@ export interface BattleScreenProps {
   opponentAvatarCardId?: CardId;
   opponentPreserveExactOrder?: boolean;
   opponentDisableArmorOnCardIds?: CardId[];
+  playerPartnerConfig?: PartnerConfigMap;
   aiDifficulty: 'easy' | 'normal' | 'hard';
   engine: EngineApi;
   chooseAiAction: (
@@ -145,6 +148,7 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
   opponentAvatarCardId,
   opponentPreserveExactOrder,
   opponentDisableArmorOnCardIds,
+  playerPartnerConfig,
   aiDifficulty,
   engine,
   chooseAiAction,
@@ -156,8 +160,9 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
       ...(opponentDisableArmorOnCardIds && opponentDisableArmorOnCardIds.length > 0
         ? { disableArmorOnCardIds: { opponent: opponentDisableArmorOnCardIds } }
         : {}),
+      ...(playerPartnerConfig ? { partnerConfig: { player: playerPartnerConfig } } : {}),
     }),
-    [opponentPreserveExactOrder, opponentDisableArmorOnCardIds]
+    [opponentPreserveExactOrder, opponentDisableArmorOnCardIds, playerPartnerConfig]
   );
 
   // Initialize match state
@@ -170,6 +175,7 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
         ...(opponentDisableArmorOnCardIds && opponentDisableArmorOnCardIds.length > 0
           ? { disableArmorOnCardIds: { opponent: opponentDisableArmorOnCardIds } }
           : {}),
+        ...(playerPartnerConfig ? { partnerConfig: { player: playerPartnerConfig } } : {}),
       },
     })
   );
@@ -526,8 +532,8 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
           : `Waiting for ${opponentName} to complete Mulligan...`;
       case 'rookiePlacement':
         return playerLegalActions.length > 0
-          ? 'Select a Level R or R P Rookie Digimon from your Hand to deploy (Partner R P cards offer Armor Evolution!).'
-          : `Waiting for ${opponentName} to deploy their Rookie Digimon...`;
+          ? 'Select a Rookie (R / R P, offers Armor Evolution) or deploy Champion (1/2 Stats) / Ultimate (1/4 Stats)!'
+          : `Waiting for ${opponentName} to deploy their Digimon...`;
       case 'digivolve':
         if (visibleState.activePlayer === 'player' && hasActiveOptionModifier) {
           return hasDigivolveTargets
@@ -766,6 +772,7 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
             phase={visibleState.phase}
             canSelectAttack={false}
             activeDigivolveModifier={opponentState.activeDigivolveModifier}
+            partnerConfig={visibleState.config.partnerConfig?.opponent}
             onInspectCard={(id) => setInspectedCardId(id)}
             onInspectStack={handleInspectStack}
           />
@@ -943,6 +950,7 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
               phase={visibleState.phase}
               canSelectAttack={canPlayerSelectAttack}
               activeDigivolveModifier={playerState.activeDigivolveModifier}
+              partnerConfig={visibleState.config.partnerConfig?.player ?? playerPartnerConfig}
               onSelectAttack={(slot: AttackSlot) => {
                 const action = playerLegalActions.find(
                   (a) => a.type === 'chooseAttack' && a.slot === slot
@@ -1127,7 +1135,10 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
             {/* Hand Cards Grid */}
             <div className="ddcb-hand-cards-grid">
               {playerState.hand.map((cardId, handIndex) => {
-                const card = getCardById(cardId);
+                const effectivePartnerConfig =
+                  visibleState.config.partnerConfig?.player ?? playerPartnerConfig;
+                const card =
+                  getEffectiveCardData(cardId, effectivePartnerConfig) ?? getCardById(cardId);
 
                 // Find all legal actions for this handIndex
                 const placeRookieActs = playerLegalActions.filter(
@@ -1280,13 +1291,23 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
                                   <>
                                     <Sparkles size={13} />
                                     <span>
-                                      Deploy Partner ({armorPlaceActs.length} Armor / Rookie)
+                                      Deploy Partner (
+                                      {armorPlaceActs.length === 1
+                                        ? 'Armor / Rookie'
+                                        : `${armorPlaceActs.length} Armor / Rookie`}
+                                      )
                                     </span>
                                   </>
                                 ) : (
                                   <>
                                     <ChevronsUp size={14} />
-                                    <span>Deploy Rookie to Arena</span>
+                                    <span>
+                                      {card?.level === 'C'
+                                        ? 'Deploy Champion (1/2 Stats)'
+                                        : card?.level === 'U'
+                                          ? 'Deploy Ultimate (1/4 Stats)'
+                                          : 'Deploy Rookie to Arena'}
+                                    </span>
                                   </>
                                 )}
                               </button>
@@ -1510,8 +1531,14 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
 
       {pendingPartnerHandIndex !== null &&
         (() => {
+          const effectivePartnerConfig =
+            visibleState.config.partnerConfig?.player ?? playerPartnerConfig;
           const partnerCardId = playerState.hand[pendingPartnerHandIndex];
-          const partnerCard = partnerCardId !== undefined ? getCardById(partnerCardId) : undefined;
+          const partnerCard =
+            partnerCardId !== undefined
+              ? getEffectiveCardData(partnerCardId, effectivePartnerConfig) ??
+                getCardById(partnerCardId)
+              : undefined;
           const placeChoices = playerLegalActions.filter(
             (a): a is Extract<Action, { type: 'placeRookie' }> =>
               a.type === 'placeRookie' && a.handIndex === pendingPartnerHandIndex
@@ -1640,7 +1667,10 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
 
                   {armorChoices.map((act) => {
                     const armorCard =
-                      act.armorCardId !== undefined ? getCardById(act.armorCardId) : undefined;
+                      act.armorCardId !== undefined
+                        ? getEffectiveCardData(act.armorCardId, effectivePartnerConfig) ??
+                          getCardById(act.armorCardId)
+                        : undefined;
                     if (!armorCard) return null;
                     return (
                       <div

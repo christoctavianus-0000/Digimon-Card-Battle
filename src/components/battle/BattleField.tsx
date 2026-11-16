@@ -23,6 +23,7 @@ import type {
   GameEvent,
   GrantedAbility,
   MatchPhase,
+  PartnerConfigMap,
   PlayerSide,
   Specialty,
   SupportSlotCard,
@@ -30,6 +31,8 @@ import type {
   XEffect,
 } from '../../types/game';
 import { getCardById, getCardImageUrl } from '../../data/cards';
+import { getEffectiveCardData } from '../../data/digiParts';
+import { applyNumericMode } from '../../engine';
 
 // ---------------------------------------------------------------------------
 // Attack Symbol SVG Renderer (○ / △ / ✕)
@@ -378,6 +381,7 @@ export interface ActiveDigimonBattleSlotProps {
   phase: MatchPhase;
   canSelectAttack: boolean;
   activeDigivolveModifier?: DigivolveModifier | null;
+  partnerConfig?: PartnerConfigMap;
   onSelectAttack?: (slot: AttackSlot) => void;
   onInspectCard: (cardId: CardId) => void;
   onInspectStack: (side: PlayerSide) => void;
@@ -390,6 +394,7 @@ export const ActiveDigimonBattleSlot: React.FC<ActiveDigimonBattleSlotProps> = (
   phase,
   canSelectAttack,
   activeDigivolveModifier,
+  partnerConfig,
   onSelectAttack,
   onInspectCard,
   onInspectStack,
@@ -405,16 +410,16 @@ export const ActiveDigimonBattleSlot: React.FC<ActiveDigimonBattleSlotProps> = (
           <div style={{ fontSize: '0.75rem', marginTop: 3 }}>
             {phase === 'rookiePlacement'
               ? side === 'player'
-                ? 'Select a Level R / R P Digimon from your Hand below to deploy!'
-                : 'Opponent is deploying a Rookie Digimon...'
-              : 'Awaiting Rookie deployment on next Entry step.'}
+                ? 'Select a Digimon from your Hand below to deploy (R / R P, or C 1/2, U 1/4)!'
+                : 'Opponent is deploying a Digimon...'
+              : 'Awaiting Digimon deployment on next Entry step.'}
           </div>
         </div>
       </div>
     );
   }
 
-  const card = getCardById(activeDigimon.cardId);
+  const card = getEffectiveCardData(activeDigimon.cardId, partnerConfig) ?? getCardById(activeDigimon.cardId);
   const currentHp = activeDigimon.currentHp;
   const maxHp = activeDigimon.maxHp || (card?.hp ?? 500);
   const hpRatio = maxHp > 0 ? Math.max(0, Math.min(100, (currentHp / maxHp) * 100)) : 0;
@@ -422,6 +427,7 @@ export const ActiveDigimonBattleSlot: React.FC<ActiveDigimonBattleSlotProps> = (
 
   const chosenOrEffectiveAttack =
     battle?.effectiveAttacks?.[side] ?? battle?.chosenAttacks?.[side] ?? null;
+  const penaltyDivisor = activeDigimon.statPenaltyDivisor;
 
   const computeSlotDisplayPower = (slot: AttackSlot, basePower: number): number => {
     if (
@@ -431,13 +437,17 @@ export const ActiveDigimonBattleSlot: React.FC<ActiveDigimonBattleSlotProps> = (
     ) {
       return battle.computedPowers[side];
     }
+    const startingPower =
+      penaltyDivisor && penaltyDivisor > 1
+        ? applyNumericMode(basePower, 'divide', penaltyDivisor, 'attackPower')
+        : basePower;
     const addMod = activeDigimon.tempModifiers?.attackPowerAdd;
-    if (!addMod) return basePower;
+    if (!addMod) return startingPower;
     let delta = (addMod.all ?? 0) + (addMod[slot] ?? 0);
     if (chosenOrEffectiveAttack === slot) {
       delta += addMod.chosen ?? 0;
     }
-    return Math.max(0, basePower + delta);
+    return Math.max(0, startingPower + delta);
   };
 
   const isJammed = Boolean(
@@ -528,10 +538,25 @@ export const ActiveDigimonBattleSlot: React.FC<ActiveDigimonBattleSlotProps> = (
 
         {/* Active Modifiers / Buffs */}
         {(activeDigivolveModifier ||
+          (penaltyDivisor && penaltyDivisor > 1) ||
           (activeDigimon.tempModifiers?.grantedAbilities &&
             activeDigimon.tempModifiers.grantedAbilities.length > 0) ||
           activeDigimon.tempModifiers?.reviveOnKoHp) && (
           <div className="ddcb-modifiers-bar">
+            {penaltyDivisor && penaltyDivisor > 1 && (
+              <span
+                className="ddcb-mod-chip"
+                style={{
+                  background: 'rgba(239, 68, 68, 0.2)',
+                  borderColor: '#f87171',
+                  color: '#fecaca',
+                }}
+                title="Deployed directly without evolving from a Rookie"
+              >
+                <AlertTriangle size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} />
+                1/{penaltyDivisor} STATS (Unevolved)
+              </span>
+            )}
             {activeDigivolveModifier && (
               <span className="ddcb-mod-chip digivolve-mod">
                 ⚡ Digivolve Mod Active

@@ -156,8 +156,19 @@ Level `A` (Armor) Digimon are virtual evolutions invoked directly when playing a
 2. **Zero DP Cost, DP Slot Preservation, & 30-Card Conservation**:
    - Armor cards cannot be added to a deck (`0` copies allowed).
    - Evolving into Armor on Partner entry requires **0 DP** and **DOES NOT discard cards in the `dpSlot`!**
-   - Sets active `hp` to the Armor Digimon's printed `hp`.
+   - Sets active `hp` to the Armor Digimon's printed (plus Partner Digi-Part) `hp`.
    - Because Armor forms do not come from the 30-card deck, when an active Armor Digimon is KO'd or De-Armored (`#298`), only the underlying deck cards in its stack (`[partnerId, ...]`) move to `offline` — the virtual Level `A` card never enters `offline`, `hand`, or `online`.
+3. **Partner Digi-Parts (Up to 3 Equipped) & Battle Armor Selection**:
+   - Each Partner card (`R P`) can equip up to **3 Digi-Parts** (`#000`–`#127`) in the Partner Studio to modify HP, Attack Powers (`○`/`△`/`✕`), X-Effect, DP `+P`, or Support Effect. HP, Attack Power, and X-Effect Digi-Part changes also apply to the Partner's Armor (`A`) forms.
+   - Players can select a specific `selectedArmorCardId` for each Partner card to determine which Armor form it evolves into in battle.
+
+### 6.5 Direct Champion (`C`) / Ultimate (`U`) Entry & Stat Penalty
+Players may also deploy a Level `C` (Champion) or Level `U` (Ultimate) Digimon card directly into an empty Battle Slot during the Entry step without first evolving from a Rookie, subject to strict stat penalties:
+1. **Direct Champion (`C`) Entry (`statPenaltyDivisor = 2`)**: HP and all Attack Powers (`○`, `△`, `✕`) are **halved (`1/2`)**, floored to the nearest 10 (`min 10 HP`, `min 0 Atk`).
+2. **Direct Ultimate (`U`) Entry (`statPenaltyDivisor = 4`)**: HP and all Attack Powers (`○`, `△`, `✕`) are **quartered (`1/4`)**, floored to the nearest 10 (`min 10 HP`, `min 0 Atk`).
+3. **Evolving a Penalized Champion (`C -> U`)**:
+   - If a penalized `C` (`1/2` stats) evolves normally into an Ultimate (`U`) (or via `Speed` / `Mutant`), the new Ultimate inherits a **`1/2` stat penalty**.
+   - **Exception (`295 Special Digivolve` / `293 Download Digivolve`)**: Evolving a penalized `C` into `U` using **Special Digivolve (#295)** or **Download Digivolve (#293)** completely **removes the stat penalty**, restoring the new Ultimate to full `1x` stats!
 
 ---
 

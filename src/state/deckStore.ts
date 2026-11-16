@@ -1,5 +1,13 @@
 import { ALL_CARDS, getCardById, getCardByName } from '../data/cards';
 import {
+  ARMOR_TO_PARTNER_ID,
+  DEFAULT_PARTNER_ARMOR,
+  MAX_EQUIPPED_DIGI_PARTS,
+  PARTNER_CARD_IDS,
+  createDefaultPartnerConfigs,
+  getDigiPartById,
+} from '../data/digiParts';
+import {
   ALL_BASE_DECKS,
   STARTER_DECKS,
   getDeckById,
@@ -12,6 +20,7 @@ import {
   type CardData,
   type CardId,
   type Level,
+  type PartnerCustomization,
   type Specialty,
 } from '../types/game';
 
@@ -48,6 +57,7 @@ export interface DeckStoreState {
   decks: SavedDeck[];
   activeDeckId: string;
   stats: BattleStatsSummary;
+  partnerConfigs: Record<CardId, PartnerCustomization>;
 }
 
 export interface DeckValidationOptions {
@@ -843,6 +853,7 @@ export function createDefaultDeckStoreState(): DeckStoreState {
       totalDraws: 0,
       byOpponent: {},
     },
+    partnerConfigs: createDefaultPartnerConfigs(),
   };
 }
 
@@ -898,10 +909,44 @@ export function loadDeckStore(storageKey = DECK_STORE_STORAGE_KEY): DeckStoreSta
           : {},
     };
 
+    const partnerConfigs = createDefaultPartnerConfigs();
+    if (parsed.partnerConfigs && typeof parsed.partnerConfigs === 'object') {
+      for (const partnerId of PARTNER_CARD_IDS) {
+        const rawEntry = (parsed.partnerConfigs as Record<number, Partial<PartnerCustomization>>)[
+          partnerId
+        ];
+        if (!rawEntry) continue;
+        const equippedSet: number[] = [];
+        if (Array.isArray(rawEntry.equippedParts)) {
+          for (const pid of rawEntry.equippedParts) {
+            const numId = Number(pid);
+            if (
+              !Number.isNaN(numId) &&
+              getDigiPartById(numId) &&
+              !equippedSet.includes(numId) &&
+              equippedSet.length < MAX_EQUIPPED_DIGI_PARTS
+            ) {
+              equippedSet.push(numId);
+            }
+          }
+        }
+        const rawArmor = Number(rawEntry.selectedArmorCardId);
+        const selectedArmorCardId =
+          !Number.isNaN(rawArmor) && ARMOR_TO_PARTNER_ID[rawArmor] === partnerId
+            ? rawArmor
+            : DEFAULT_PARTNER_ARMOR[partnerId]!;
+        partnerConfigs[partnerId] = {
+          equippedParts: equippedSet,
+          selectedArmorCardId,
+        };
+      }
+    }
+
     return {
       decks,
       activeDeckId,
       stats,
+      partnerConfigs,
     };
   } catch {
     return fallback;
@@ -1114,6 +1159,96 @@ export function recordMatchResult(
     },
   };
 
+  saveDeckStore(next);
+  return next;
+}
+
+/**
+ * Updates a Partner card's customization (`equippedParts` or `selectedArmorCardId`) and persists.
+ */
+export function updatePartnerConfig(
+  state: DeckStoreState,
+  partnerCardId: CardId,
+  patch: Partial<PartnerCustomization>
+): DeckStoreState {
+  if (!PARTNER_CARD_IDS.includes(partnerCardId)) return state;
+  const current = state.partnerConfigs[partnerCardId] ?? {
+    equippedParts: [],
+    selectedArmorCardId: DEFAULT_PARTNER_ARMOR[partnerCardId]!,
+  };
+
+  const nextEquipped = patch.equippedParts
+    ? patch.equippedParts
+        .filter((pid, idx, arr) => Boolean(getDigiPartById(pid)) && arr.indexOf(pid) === idx)
+        .slice(0, MAX_EQUIPPED_DIGI_PARTS)
+    : current.equippedParts;
+
+  const nextArmor =
+    patch.selectedArmorCardId !== undefined &&
+    ARMOR_TO_PARTNER_ID[patch.selectedArmorCardId] === partnerCardId
+      ? patch.selectedArmorCardId
+      : current.selectedArmorCardId;
+
+  const next: DeckStoreState = {
+    ...state,
+    partnerConfigs: {
+      ...state.partnerConfigs,
+      [partnerCardId]: {
+        equippedParts: nextEquipped,
+        selectedArmorCardId: nextArmor,
+      },
+    },
+  };
+  saveDeckStore(next);
+  return next;
+}
+
+/**
+ * Toggles or equips a Digi-Part onto a Partner card (max 3 parts).
+ * Exclusive categories (`xEffect` and `support`) replace any previously equipped part in that same category.
+ */
+export function equipDigiPartToPartner(
+  state: DeckStoreState,
+  partnerCardId: CardId,
+  partId: number
+): DeckStoreState {
+  const part = getDigiPartById(partId);
+  if (!part || !PARTNER_CARD_IDS.includes(partnerCardId)) return state;
+
+  const current = state.partnerConfigs[partnerCardId] ?? {
+    equippedParts: [],
+    selectedArmorCardId: DEFAULT_PARTNER_ARMOR[partnerCardId]!,
+  };
+
+  if (current.equippedParts.includes(partId)) {
+    return updatePartnerConfig(state, partnerCardId, {
+      equippedParts: current.equippedParts.filter((id) => id !== partId),
+    });
+  }
+
+  let nextParts = [...current.equippedParts];
+  if (part.category === 'xEffect' || part.category === 'support') {
+    nextParts = nextParts.filter((id) => getDigiPartById(id)?.category !== part.category);
+  }
+
+  if (nextParts.length >= MAX_EQUIPPED_DIGI_PARTS) {
+    return state;
+  }
+
+  nextParts.push(partId);
+  return updatePartnerConfig(state, partnerCardId, {
+    equippedParts: nextParts,
+  });
+}
+
+/**
+ * Resets all Partner cards' Digi-Parts and Armor selections back to defaults.
+ */
+export function resetPartnerConfigs(state: DeckStoreState): DeckStoreState {
+  const next: DeckStoreState = {
+    ...state,
+    partnerConfigs: createDefaultPartnerConfigs(),
+  };
   saveDeckStore(next);
   return next;
 }

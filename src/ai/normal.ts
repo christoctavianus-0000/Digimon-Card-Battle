@@ -10,8 +10,10 @@
  */
 
 import { ALL_CARDS, getCardById } from '../data/cards';
+import { getEffectiveCardData } from '../data/digiParts';
 import { getCardEffect, isBattleSupportOption, isDigivolvePhaseOption } from '../data/effects';
 import {
+  applyNumericMode,
   getLegalActions,
   getLevelRank,
   getTurnStarter,
@@ -894,25 +896,45 @@ export function scoreRookieForPlacement(
   const player = sanitizedState.players[side];
   const oppSide = otherSide(side);
   const oppActive = sanitizedState.players[oppSide].battleDigimon;
+  const partnerConfig = sanitizedState.config.partnerConfig?.[side];
 
   const cardId = player.hand[handIndex];
   if (cardId === undefined) return -9999;
-  const card = getCardById(cardId);
-  if (!card || !isRookieCard(cardId)) return -9999;
+  const card = getEffectiveCardData(cardId, partnerConfig) ?? getCardById(cardId);
+  if (!card || card.kind !== 'Digimon' || card.level === 'A') return -9999;
 
-  const armorCard = armorCardId !== undefined ? getCardById(armorCardId) : undefined;
+  const armorCard =
+    armorCardId !== undefined
+      ? getEffectiveCardData(armorCardId, partnerConfig) ?? getCardById(armorCardId)
+      : undefined;
   if (armorCardId !== undefined && (!armorCard || armorCard.level !== 'A')) {
     return -9999;
   }
 
   const deployedCard = armorCard ?? card;
+  const penaltyDivisor: 1 | 2 | 4 =
+    !armorCard && card.level === 'C' ? 2 : !armorCard && card.level === 'U' ? 4 : 1;
 
-  let score = deployedCard.hp * 1.15;
+  const effectiveHp =
+    penaltyDivisor > 1
+      ? applyNumericMode(deployedCard.hp, 'divide', penaltyDivisor, 'hp')
+      : deployedCard.hp;
+
+  let score = effectiveHp * 1.15;
   if (deployedCard.attacks) {
-    score +=
-      deployedCard.attacks.circle.power * 0.95 +
-      deployedCard.attacks.triangle.power * 0.7 +
-      deployedCard.attacks.x.power * 0.45;
+    const cPow =
+      penaltyDivisor > 1
+        ? applyNumericMode(deployedCard.attacks.circle.power, 'divide', penaltyDivisor, 'attackPower')
+        : deployedCard.attacks.circle.power;
+    const tPow =
+      penaltyDivisor > 1
+        ? applyNumericMode(deployedCard.attacks.triangle.power, 'divide', penaltyDivisor, 'attackPower')
+        : deployedCard.attacks.triangle.power;
+    const xPow =
+      penaltyDivisor > 1
+        ? applyNumericMode(deployedCard.attacks.x.power, 'divide', penaltyDivisor, 'attackPower')
+        : deployedCard.attacks.x.power;
+    score += cPow * 0.95 + tPow * 0.7 + xPow * 0.45;
   }
 
   if (armorCard) {
@@ -934,6 +956,21 @@ export function scoreRookieForPlacement(
         score += 140;
       }
     }
+  } else if (card.level === 'C') {
+    score -= 450;
+    const hasPenaltyClearOption = player.hand.some(
+      (id, idx) => idx !== handIndex && (id === 293 || id === 295),
+    );
+    const hasUltimateInHand = player.hand.some((id, idx) => {
+      if (idx === handIndex) return false;
+      const other = getCardById(id);
+      return Boolean(other && other.kind === 'Digimon' && other.level === 'U');
+    });
+    if (hasPenaltyClearOption && hasUltimateInHand) {
+      score += 320;
+    }
+  } else if (card.level === 'U') {
+    score -= 750;
   } else {
     if (card.level === 'R P') {
       score += 90;
@@ -959,7 +996,9 @@ export function scoreRookieForPlacement(
 
   // Check matchup against Opponent's Active Digimon if present
   if (oppActive) {
-    const oppCard = getCardById(oppActive.cardId);
+    const oppPartnerConfig = sanitizedState.config.partnerConfig?.[oppSide];
+    const oppCard =
+      getEffectiveCardData(oppActive.cardId, oppPartnerConfig) ?? getCardById(oppActive.cardId);
     const myXEff = deployedCard.attacks?.x.effect;
     if (myXEff?.type === 'foeX3' && myXEff.specialty === oppActive.effectiveSpecialty) {
       score += 350;

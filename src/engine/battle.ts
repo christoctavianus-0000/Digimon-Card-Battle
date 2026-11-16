@@ -10,6 +10,7 @@
  */
 
 import { getCardById } from '../data/cards';
+import { getEffectiveCardData } from '../data/digiParts';
 import type {
   AttackSlot,
   CardId,
@@ -83,7 +84,9 @@ export function computeActiveAbilities(
 
     const finalSlot = getEffectiveAttack(state, side);
     if (finalSlot === 'x') {
-      const card = getCardById(digimon.cardId);
+      const card =
+        getEffectiveCardData(digimon.cardId, state.config.partnerConfig?.[side]) ??
+        getCardById(digimon.cardId);
       const printed = xEffectToGrantedAbility(card?.attacks?.x.effect);
       if (printed) {
         printedBySide[side].push(printed);
@@ -203,7 +206,11 @@ export function resolveBattle(state: MatchState, effectRegistry?: EffectRegistry
   for (const side of playerOrder) {
     const sup = state.battle.supportCards[side];
     if (!sup || sup.voided) continue;
-    const effectDef = resolveCardEffectDef(sup.cardId, effectRegistry);
+    const effectDef = resolveCardEffectDef(
+      sup.cardId,
+      effectRegistry,
+      state.config.partnerConfig?.[side],
+    );
     if (!effectDef || (effectDef.timing !== 'support' && effectDef.timing !== 'both')) {
       continue;
     }
@@ -222,8 +229,14 @@ export function resolveBattle(state: MatchState, effectRegistry?: EffectRegistry
   for (const side of playerOrder) {
     const sup = state.battle.supportCards[side];
     if (!sup || sup.voided) continue;
-    const card = getCardById(sup.cardId);
-    const effectDef = resolveCardEffectDef(sup.cardId, effectRegistry);
+    const card =
+      getEffectiveCardData(sup.cardId, state.config.partnerConfig?.[side]) ??
+      getCardById(sup.cardId);
+    const effectDef = resolveCardEffectDef(
+      sup.cardId,
+      effectRegistry,
+      state.config.partnerConfig?.[side],
+    );
 
     if (!effectDef || (effectDef.timing !== 'support' && effectDef.timing !== 'both')) {
       // Digivolve-phase Option cards (293..300) cannot be used as Support cards;

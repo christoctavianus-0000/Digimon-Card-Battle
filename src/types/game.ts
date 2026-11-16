@@ -149,12 +149,20 @@ export interface ActiveDigimon {
   stack: CardId[];
   /** Current HP in battle. */
   currentHp: number;
-  /** Printed max HP of the active Digimon card. */
+  /** Printed max HP (or stat-penalized max HP) of the active Digimon card. */
   maxHp: number;
   /** Current effective specialty (defaults to card's printed specialty, can be modified in battle). */
   effectiveSpecialty: Specialty;
   /** Temporary battle-scoped modifiers cleared after battle resolution. */
   tempModifiers?: TempDigimonModifiers;
+  /**
+   * Stat penalty divisor applied when a Champion (C) or Ultimate (U) enters the Battle Area
+   * without evolving from a Rookie:
+   * - `1` (or undefined): Full stats (1x)
+   * - `2`: Halved stats (1/2) — C played directly without evolving, or U evolved from a penalized C (unless Special/Download Digivolve was used)
+   * - `4`: Quartered stats (1/4) — U played directly without evolving
+   */
+  statPenaltyDivisor?: 1 | 2 | 4;
 }
 
 /**
@@ -241,6 +249,15 @@ export interface BattleContext {
 // Rules Configuration & Match State
 // ---------------------------------------------------------------------------
 
+export interface PartnerCustomization {
+  /** Up to 3 equipped Digi-Part IDs (0..127) on this Partner card. */
+  equippedParts: number[];
+  /** Selected Armor ('A') card ID for this Partner in battle. */
+  selectedArmorCardId: CardId;
+}
+
+export type PartnerConfigMap = Partial<Record<CardId, PartnerCustomization>>;
+
 export interface RulesConfig {
   /** How unspecified card selections (e.g. discard without explicit choice) are resolved. */
   unspecifiedSelection?: 'random' | 'first' | 'owner';
@@ -252,6 +269,8 @@ export interface RulesConfig {
   preserveDeckOrder?: Partial<Record<PlayerSide, boolean>>;
   /** Optional per-side list of Partner CardIds that are forbidden from Armor Digivolving (`[no armor]`). */
   disableArmorOnCardIds?: Partial<Record<PlayerSide, readonly CardId[]>>;
+  /** Optional per-side Partner card customizations (up to 3 equipped Digi-Parts + selected Armor card). */
+  partnerConfig?: Partial<Record<PlayerSide, PartnerConfigMap>>;
 }
 
 export type WinReason = 'three_ko' | 'opponent_deck_out' | 'opponent_no_rookie';

@@ -11,7 +11,7 @@
  */
 
 import { getCardById } from '../data/cards';
-import { nextRng, pickWeightedIndex } from '../engine';
+import { isRookieCard, nextRng, pickWeightedIndex } from '../engine';
 import type { Action, MatchState, PlayerSide } from '../types/game';
 import { createSanitizedAiContext } from './normal';
 
@@ -45,11 +45,18 @@ export function chooseEasyAction(state: MatchState, side: PlayerSide): Action {
     }
 
     case 'rookiePlacement': {
-      // Pick any Rookie in hand with uniform deterministic randomness
-      const rookieActions = legalActions.filter((a) => a.type === 'placeRookie');
-      if (rookieActions.length === 0) return legalActions[0]!;
-      const idx = Math.floor(roll() * rookieActions.length);
-      return rookieActions[idx]!;
+      // Pick any true Rookie ('R' / 'R P') in hand first; fall back to direct C/U only if none
+      const allPlaceActions = legalActions.filter(
+        (a): a is Extract<Action, { type: 'placeRookie' }> => a.type === 'placeRookie',
+      );
+      if (allPlaceActions.length === 0) return legalActions[0]!;
+      const rookieActions = allPlaceActions.filter((a) => {
+        const cid = player.hand[a.handIndex];
+        return cid !== undefined && isRookieCard(cid);
+      });
+      const pool = rookieActions.length > 0 ? rookieActions : allPlaceActions;
+      const idx = Math.floor(roll() * pool.length);
+      return pool[idx]!;
     }
 
     case 'digivolve': {

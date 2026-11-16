@@ -5,6 +5,7 @@ import {
   Layers,
   RotateCcw,
   Shield,
+  Sparkles,
   Swords,
   Trophy,
   Volume2,
@@ -15,6 +16,7 @@ import { soundEngine } from './audio/soundEngine';
 import { ensureDigiviceUiStyles, getUiAssetUrl } from './components/CardView';
 import { RulesHelpModal } from './components/battle/BattleField';
 import { ALL_CARDS } from './data/cards';
+import { PARTNER_CARD_IDS } from './data/digiParts';
 import { OPPONENTS, type AiDifficultyLevel, type OpponentDef } from './data/opponents';
 import { engine as baseEngine } from './engine';
 import {
@@ -40,7 +42,7 @@ import {
   type PlayerSide,
 } from './types/game';
 
-export type NavTab = 'arena' | 'deckbuilder' | 'codex';
+export type NavTab = 'arena' | 'deckbuilder' | 'partners' | 'codex';
 
 const BattleScreen = React.lazy(() =>
   import('./components/BattleScreen').then((m) => ({ default: m.BattleScreen }))
@@ -50,6 +52,9 @@ const CardBinder = React.lazy(() =>
 );
 const DeckBuilder = React.lazy(() =>
   import('./components/DeckBuilder').then((m) => ({ default: m.DeckBuilder }))
+);
+const PartnerEditor = React.lazy(() =>
+  import('./components/PartnerEditor').then((m) => ({ default: m.PartnerEditor }))
 );
 const OpponentSelect = React.lazy(() =>
   import('./components/OpponentSelect').then((m) => ({ default: m.OpponentSelect }))
@@ -262,6 +267,19 @@ export const App: React.FC = () => {
 
             <button
               type="button"
+              className={`ddcb-nav__tab ${activeTab === 'partners' ? 'is-active' : ''}`}
+              onClick={() => {
+                soundEngine.playClick();
+                setActiveTab('partners');
+              }}
+            >
+              <Sparkles size={16} />
+              <span>Partner Studio</span>
+              <span className="ddcb-nav__count">{PARTNER_CARD_IDS.length}</span>
+            </button>
+
+            <button
+              type="button"
               className={`ddcb-nav__tab ${activeTab === 'codex' ? 'is-active' : ''}`}
               onClick={() => {
                 soundEngine.playClick();
@@ -437,6 +455,7 @@ export const App: React.FC = () => {
               opponentAvatarCardId={activeMatch.opponent.representativeCardId}
               opponentPreserveExactOrder={activeMatch.opponent.preserveExactOrder}
               opponentDisableArmorOnCardIds={activeMatch.opponent.disableArmorOnCardIds}
+              playerPartnerConfig={storeState.partnerConfigs}
               aiDifficulty={activeMatch.aiDifficulty}
               engine={soundAwareEngine}
               chooseAiAction={chooseAiAction}
@@ -454,6 +473,11 @@ export const App: React.FC = () => {
             />
           ) : activeTab === 'deckbuilder' ? (
             <DeckBuilder
+              storeState={storeState}
+              onStoreChange={setStoreState}
+            />
+          ) : activeTab === 'partners' ? (
+            <PartnerEditor
               storeState={storeState}
               onStoreChange={setStoreState}
             />

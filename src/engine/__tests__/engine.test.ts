@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { getCardById } from '../../data/cards';
+import { ALL_DIGI_PARTS, getEffectiveCardData } from '../../data/digiParts';
+import {
+  createDefaultDeckStoreState,
+  equipDigiPartToPartner,
+  updatePartnerConfig,
+} from '../../state/deckStore';
 import type { Action, CardId, MatchState } from '../../types/game';
 import {
   ARMOR_LINEAGE,
@@ -8,6 +14,7 @@ import {
   createEffectExecContext,
   createMatch,
   executeEffectOps,
+  getActiveDigimonSlotPowers,
   getLegalActions,
   getVisibleState,
   resolveBattle,
@@ -1078,6 +1085,228 @@ describe('Core Battle Engine (DDCB PS1)', () => {
       const visibleAfter = getVisibleState(state, 'player');
       expect(visibleAfter.battle?.chosenAttacks.player).toBe('circle');
       expect(visibleAfter.battle?.chosenAttacks.opponent).toBe('x');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 9. Direct C/U Entry Stat Penalty & Partner Digi-Parts Customization
+  // -------------------------------------------------------------------------
+  describe('Direct C/U Entry Penalty & Partner Digi-Parts', () => {
+    it('42. applies 1/2 stat penalty on direct C entry and 1/4 stat penalty on direct U entry', () => {
+      const greymon = getCardById(14)!; // C, Fire
+      const metalGreymon = getCardById(9)!; // U, Fire
+
+      // Direct Champion (C) placement -> 1/2 HP and Attack Powers
+      const stateC = createMatch({
+        playerDeck: buildTestDeck(),
+        opponentDeck: buildTestDeck(),
+        seed: 5150,
+        firstPlayer: 'player',
+        config: { enableMulligan: false },
+      });
+      stateC.players.player.battleDigimon = null;
+      stateC.players.player.hand = [14, 27];
+      const placedC = applyAction(stateC, { type: 'placeRookie', side: 'player', handIndex: 0 });
+      expect(placedC.players.player.battleDigimon!.cardId).toBe(14);
+      expect(placedC.players.player.battleDigimon!.statPenaltyDivisor).toBe(2);
+      expect(placedC.players.player.battleDigimon!.currentHp).toBe(
+        applyNumericMode(greymon.hp, 'divide', 2, 'hp')
+      );
+      expect(getActiveDigimonSlotPowers(placedC, 'player')).toEqual({
+        circle: applyNumericMode(greymon.attacks!.circle.power, 'divide', 2, 'attackPower'),
+        triangle: applyNumericMode(greymon.attacks!.triangle.power, 'divide', 2, 'attackPower'),
+        x: applyNumericMode(greymon.attacks!.x.power, 'divide', 2, 'attackPower'),
+      });
+
+      // Direct Ultimate (U) placement -> 1/4 HP and Attack Powers
+      const stateU = createMatch({
+        playerDeck: buildTestDeck(),
+        opponentDeck: buildTestDeck(),
+        seed: 5151,
+        firstPlayer: 'player',
+        config: { enableMulligan: false },
+      });
+      stateU.players.player.battleDigimon = null;
+      stateU.players.player.hand = [9, 27];
+      const placedU = applyAction(stateU, { type: 'placeRookie', side: 'player', handIndex: 0 });
+      expect(placedU.players.player.battleDigimon!.cardId).toBe(9);
+      expect(placedU.players.player.battleDigimon!.statPenaltyDivisor).toBe(4);
+      expect(placedU.players.player.battleDigimon!.currentHp).toBe(
+        applyNumericMode(metalGreymon.hp, 'divide', 4, 'hp')
+      );
+      expect(getActiveDigimonSlotPowers(placedU, 'player')).toEqual({
+        circle: applyNumericMode(metalGreymon.attacks!.circle.power, 'divide', 4, 'attackPower'),
+        triangle: applyNumericMode(metalGreymon.attacks!.triangle.power, 'divide', 4, 'attackPower'),
+        x: applyNumericMode(metalGreymon.attacks!.x.power, 'divide', 4, 'attackPower'),
+      });
+    });
+
+    it('43. carries 1/2 penalty when penalized C evolves normally to U, but clears penalty with Special or Download Digivolve', () => {
+      const metalGreymon = getCardById(9)!;
+
+      const makePenalizedCState = (hand: CardId[], dp = metalGreymon.dp): MatchState => {
+        const s = createMatch({
+          playerDeck: buildTestDeck(),
+          opponentDeck: buildTestDeck(),
+          seed: 6160,
+          firstPlayer: 'player',
+          config: { enableMulligan: false },
+        });
+        s.phase = 'digivolve';
+        s.activePlayer = 'player';
+        s.players.player.battleDigimon = {
+          cardId: 14, // #014 Greymon (C, Fire)
+          stack: [],
+          currentHp: 300,
+          maxHp: 300,
+          effectiveSpecialty: 'Fire',
+          statPenaltyDivisor: 2,
+        };
+        s.players.player.dpSlot = [27, 29];
+        s.players.player.dpTotal = dp;
+        s.players.player.hand = hand;
+        return s;
+      };
+
+      // Normal C -> U keeps 1/2 penalty on the new U card
+      const normalEvo = applyAction(makePenalizedCState([9]), {
+        type: 'digivolve',
+        side: 'player',
+        handIndex: 0,
+      });
+      expect(normalEvo.players.player.battleDigimon!.cardId).toBe(9);
+      expect(normalEvo.players.player.battleDigimon!.statPenaltyDivisor).toBe(2);
+      expect(normalEvo.players.player.battleDigimon!.currentHp).toBe(
+        applyNumericMode(metalGreymon.hp, 'divide', 2, 'hp')
+      );
+      expect(getActiveDigimonSlotPowers(normalEvo, 'player').circle).toBe(
+        applyNumericMode(metalGreymon.attacks!.circle.power, 'divide', 2, 'attackPower')
+      );
+
+      // #295 Special Digivolve removes stat penalty on new U card
+      let specialEvo = makePenalizedCState([295, 9]);
+      specialEvo = applyAction(specialEvo, {
+        type: 'useDigivolveOption',
+        side: 'player',
+        handIndex: 0,
+      });
+      specialEvo = applyAction(specialEvo, { type: 'digivolve', side: 'player', handIndex: 0 });
+      expect(specialEvo.players.player.battleDigimon!.cardId).toBe(9);
+      expect(specialEvo.players.player.battleDigimon!.statPenaltyDivisor).toBeUndefined();
+      expect(specialEvo.players.player.battleDigimon!.currentHp).toBe(metalGreymon.hp);
+      expect(getActiveDigimonSlotPowers(specialEvo, 'player').circle).toBe(
+        metalGreymon.attacks!.circle.power
+      );
+
+      // #293 Download Digivolve also removes stat penalty on new U card
+      let downloadEvo = makePenalizedCState([293, 9], 0);
+      downloadEvo = applyAction(downloadEvo, {
+        type: 'useDigivolveOption',
+        side: 'player',
+        handIndex: 0,
+      });
+      downloadEvo = applyAction(downloadEvo, { type: 'digivolve', side: 'player', handIndex: 0 });
+      expect(downloadEvo.players.player.battleDigimon!.cardId).toBe(9);
+      expect(downloadEvo.players.player.battleDigimon!.statPenaltyDivisor).toBeUndefined();
+      expect(downloadEvo.players.player.battleDigimon!.currentHp).toBe(metalGreymon.hp);
+    });
+
+    it('44. supports 128 Digi-Parts, max 3 equipped per Partner, Partner stat/Armor carryover, and selectedArmorCardId restriction', () => {
+      expect(ALL_DIGI_PARTS).toHaveLength(128);
+      const baseVeemon = getCardById(175)!;
+      const baseMagnamon = getCardById(173)!;
+
+      let store = createDefaultDeckStoreState();
+      // Equip 3 Digi-Parts on Veemon (#175): #003 HP +200, #010 Circle +100, #039 +20 DP
+      store = equipDigiPartToPartner(store, 175, 3);
+      store = equipDigiPartToPartner(store, 175, 10);
+      store = equipDigiPartToPartner(store, 175, 39);
+      expect(store.partnerConfigs[175]!.equippedParts).toEqual([3, 10, 39]);
+
+      // Adding a 4th non-exclusive part is blocked at max 3
+      const capped = equipDigiPartToPartner(store, 175, 0);
+      expect(capped.partnerConfigs[175]!.equippedParts).toEqual([3, 10, 39]);
+
+      // Select #173 Magnamon as Veemon's battle Armor
+      store = updatePartnerConfig(store, 175, { selectedArmorCardId: 173 });
+
+      const effVeemon = getEffectiveCardData(175, store.partnerConfigs)!;
+      expect(effVeemon.hp).toBe(baseVeemon.hp + 200);
+      expect(effVeemon.attacks!.circle.power).toBe(baseVeemon.attacks!.circle.power + 100);
+      expect(effVeemon.plusP).toBe(baseVeemon.plusP + 20);
+
+      // Stats carry over into Magnamon (#173)
+      const effMagnamon = getEffectiveCardData(173, store.partnerConfigs)!;
+      expect(effMagnamon.hp).toBe(baseMagnamon.hp + 200);
+      expect(effMagnamon.attacks!.circle.power).toBe(baseMagnamon.attacks!.circle.power + 100);
+
+      // In rookiePlacement, legal Armor action for Veemon is restricted to #173 Magnamon
+      const match = createMatch({
+        playerDeck: buildTestDeck(),
+        opponentDeck: buildTestDeck(),
+        seed: 7070,
+        firstPlayer: 'player',
+        config: {
+          enableMulligan: false,
+          partnerConfig: { player: store.partnerConfigs },
+        },
+      });
+      match.players.player.battleDigimon = null;
+      match.players.player.hand = [175, 27];
+
+      const veemonArmorChoices = getLegalActions(match, 'player').filter(
+        (a): a is Extract<Action, { type: 'placeRookie' }> =>
+          a.type === 'placeRookie' && a.handIndex === 0 && a.armorCardId !== undefined
+      );
+      expect(veemonArmorChoices).toHaveLength(1);
+      expect(veemonArmorChoices[0]!.armorCardId).toBe(173);
+
+      // Deploying non-selected #172 throws while #173 deploys with boosted HP & Circle power
+      expect(() =>
+        applyAction(match, {
+          type: 'placeRookie',
+          side: 'player',
+          handIndex: 0,
+          armorCardId: 172,
+        })
+      ).toThrow();
+
+      const deployed = applyAction(match, {
+        type: 'placeRookie',
+        side: 'player',
+        handIndex: 0,
+        armorCardId: 173,
+      });
+      expect(deployed.players.player.battleDigimon!.cardId).toBe(173);
+      expect(deployed.players.player.battleDigimon!.currentHp).toBe(baseMagnamon.hp + 200);
+      expect(getActiveDigimonSlotPowers(deployed, 'player').circle).toBe(
+        baseMagnamon.attacks!.circle.power + 100
+      );
+
+      // Also verify [Sup Effect] Digi-Part (#043 Boost Attack +200) and [Effect] Digi-Part (#035 1st Attack, X -100)
+      let supStore = createDefaultDeckStoreState();
+      supStore = equipDigiPartToPartner(supStore, 175, 35);
+      supStore = equipDigiPartToPartner(supStore, 175, 43);
+      const battleState = createBattleReadyState({
+        playerCardId: 27,
+        opponentCardId: 62,
+        playerHand: [175, 27],
+      });
+      battleState.config.partnerConfig = { player: supStore.partnerConfigs };
+      battleState.phase = 'supportSelect';
+      battleState.activePlayer = 'player';
+      battleState.battle!.chosenAttacks = { player: 'circle', opponent: 'circle' };
+      const afterSup = applyAction(battleState, {
+        type: 'playSupportFromHand',
+        side: 'player',
+        handIndex: 0,
+      });
+      const resolved = applyAction(afterSup, { type: 'passSupport', side: 'opponent' });
+      const agumonCircle = getCardById(27)!.attacks!.circle.power;
+      const gabumonHp = getCardById(62)!.hp;
+      expect(resolved.players.opponent.battleDigimon!.currentHp).toBe(
+        Math.max(0, gabumonHp - (agumonCircle + 200))
+      );
     });
   });
 });

@@ -9,6 +9,7 @@
  */
 
 import { getCardById } from '../data/cards';
+import { getEffectiveCardData } from '../data/digiParts';
 import { isBattleSupportOption, isDigivolvePhaseOption } from '../data/effects';
 import type {
   Action,
@@ -36,9 +37,11 @@ import {
 } from '../types/game';
 import { resolveBattle } from './battle';
 import {
+  applyNumericMode,
   computeDpTotal,
   createEffectExecContext,
   executeEffectOps,
+  getActiveDigimonSlotPowers,
   matchesLevelList,
   otherSide,
   resolveCardEffectDef,
@@ -66,6 +69,15 @@ export const ARMOR_LINEAGE: Readonly<Record<CardId, readonly CardId[]>> = {
 export function isRookieCard(cardId: CardId): boolean {
   const card = getCardById(cardId);
   return Boolean(card && card.kind === 'Digimon' && (card.level === 'R' || card.level === 'R P'));
+}
+
+/**
+ * Checks whether a card can be deployed directly into an empty Battle Area (`R`, `R P`, `C`, or `U`).
+ * Direct `C` and `U` entry carries a stat penalty (`1/2` for C, `1/4` for U).
+ */
+export function isPlayableEntryDigimon(cardId: CardId): boolean {
+  const card = getCardById(cardId);
+  return Boolean(card && card.kind === 'Digimon' && card.level !== 'A');
 }
 
 /**
@@ -514,6 +526,9 @@ export function createMatch(params: CreateMatchParams): MatchState {
     ...(params.config?.disableArmorOnCardIds
       ? { disableArmorOnCardIds: params.config.disableArmorOnCardIds }
       : {}),
+    ...(params.config?.partnerConfig
+      ? { partnerConfig: params.config.partnerConfig }
+      : {}),
   };
 
   const playerOnline = config.preserveDeckOrder?.player
@@ -638,25 +653,35 @@ export function getLegalActions(state: MatchState, side: PlayerSide): Action[] {
 
     case 'rookiePlacement': {
       if (player.battleDigimon !== null) return [];
-      // During mid-match post-KO placement, only activePlayer places a Rookie.
+      // During mid-match post-KO placement, only activePlayer places a Digimon.
       // During initial setup, both players have battleDigimon === null; allow either side that needs to place.
       const disabledArmorIds = state.config.disableArmorOnCardIds?.[side];
+      const partnerConfig = state.config.partnerConfig?.[side];
       const actions: Action[] = [];
+
+      // 1. Emit Rookie ('R' / 'R P') entries first (with Armor Evolution choice for 'R P')
       for (let i = 0; i < player.hand.length; i++) {
         const cardId = player.hand[i]!;
-        if (isRookieCard(cardId)) {
-          actions.push({
-            type: 'placeRookie',
-            side,
-            handIndex: i,
-            cardId,
-          });
-          const card = getCardById(cardId);
-          if (
-            card?.level === 'R P' &&
-            !(disabledArmorIds && disabledArmorIds.includes(cardId))
-          ) {
-            const armorForms = ARMOR_LINEAGE[cardId] ?? [];
+        if (!isRookieCard(cardId)) continue;
+        actions.push({
+          type: 'placeRookie',
+          side,
+          handIndex: i,
+          cardId,
+        });
+        const card = getCardById(cardId);
+        if (card?.level === 'R P' && !(disabledArmorIds && disabledArmorIds.includes(cardId))) {
+          const armorForms = ARMOR_LINEAGE[cardId] ?? [];
+          const configuredArmorId = partnerConfig?.[cardId]?.selectedArmorCardId;
+          if (configuredArmorId !== undefined && armorForms.includes(configuredArmorId)) {
+            actions.push({
+              type: 'placeRookie',
+              side,
+              handIndex: i,
+              cardId,
+              armorCardId: configuredArmorId,
+            });
+          } else {
             for (const armorCardId of armorForms) {
               actions.push({
                 type: 'placeRookie',
@@ -669,6 +694,21 @@ export function getLegalActions(state: MatchState, side: PlayerSide): Action[] {
           }
         }
       }
+
+      // 2. Emit direct Champion ('C') and Ultimate ('U') entries (enter with 1/2 or 1/4 stat penalty)
+      for (let i = 0; i < player.hand.length; i++) {
+        const cardId = player.hand[i]!;
+        const card = getCardById(cardId);
+        if (card && card.kind === 'Digimon' && (card.level === 'C' || card.level === 'U')) {
+          actions.push({
+            type: 'placeRookie',
+            side,
+            handIndex: i,
+            cardId,
+          });
+        }
+      }
+
       return actions;
     }
 
@@ -831,17 +871,32 @@ function performDigivolveFromHand(
     throw new Error(`Illegal Digivolution from ${active.cardId} to ${toCard.id}.`);
   }
 
+  const effToCard =
+    getEffectiveCardData(toCard.id, state.config.partnerConfig?.[side]) ?? toCard;
   const mod = player.activeDigivolveModifier;
   const ignoreDp = Boolean(mod?.ignoreDp);
   const usedOptionMod = Boolean(mod);
 
+  const prevPenalty = active.statPenaltyDivisor ?? 1;
+  const clearsPenalty =
+    mod?.sourceCardId === 293 ||
+    mod?.sourceCardId === 295 ||
+    Boolean(mod?.ignoreLevel) ||
+    Boolean(mod?.ignoreSpecialty && (mod?.extraDp ?? 0) > 0);
+  const nextPenalty: 1 | 2 | 4 = clearsPenalty ? 1 : prevPenalty > 1 ? 2 : 1;
+  const newMaxHp =
+    nextPenalty > 1
+      ? applyNumericMode(effToCard.hp, 'divide', nextPenalty, 'hp')
+      : effToCard.hp;
+
   player.hand.splice(handIndex, 1);
   const fromCardId = active.cardId;
   active.stack.push(fromCardId);
-  active.cardId = toCard.id;
-  active.maxHp = toCard.hp;
-  active.currentHp = toCard.hp;
-  active.effectiveSpecialty = toCard.specialty ?? active.effectiveSpecialty;
+  active.cardId = effToCard.id;
+  active.maxHp = newMaxHp;
+  active.currentHp = newMaxHp;
+  active.effectiveSpecialty = effToCard.specialty ?? active.effectiveSpecialty;
+  active.statPenaltyDivisor = nextPenalty > 1 ? nextPenalty : undefined;
 
   // Consume DP Slot unless ignoreDp is true (Speed Digivolve / Download Digivolve)
   if (!ignoreDp && player.dpSlot.length > 0) {
@@ -864,7 +919,7 @@ function performDigivolveFromHand(
     type: 'digivolved',
     side,
     fromCardId,
-    toCardId: toCard.id,
+    toCardId: effToCard.id,
     hp: active.currentHp,
     method: usedOptionMod ? 'option' : 'normal',
   });
@@ -945,67 +1000,82 @@ export function applyAction( currentState: MatchState, action: Action): MatchSta
       }
 
       const cardId = player.hand[action.handIndex];
-      if (cardId === undefined || !isRookieCard(cardId)) {
-        throw new Error(`Invalid Rookie card at handIndex ${action.handIndex}.`);
+      if (cardId === undefined || !isPlayableEntryDigimon(cardId)) {
+        throw new Error(`Invalid entry Digimon card at handIndex ${action.handIndex}.`);
       }
-      const card = getCardById(cardId)!;
+      const partnerConfig = state.config.partnerConfig?.[side];
+      const effCard = getEffectiveCardData(cardId, partnerConfig) ?? getCardById(cardId)!;
 
       if (action.armorCardId !== undefined) {
         const disabledArmorIds = state.config.disableArmorOnCardIds?.[side];
-        const allowedArmors = ARMOR_LINEAGE[card.id];
-        const armorCard = getCardById(action.armorCardId);
+        const allowedArmors = ARMOR_LINEAGE[effCard.id];
+        const configuredArmorId = partnerConfig?.[effCard.id]?.selectedArmorCardId;
+        const effArmorCard =
+          getEffectiveCardData(action.armorCardId, partnerConfig) ??
+          getCardById(action.armorCardId);
         if (
-          card.level !== 'R P' ||
-          (disabledArmorIds && disabledArmorIds.includes(card.id)) ||
+          effCard.level !== 'R P' ||
+          (disabledArmorIds && disabledArmorIds.includes(effCard.id)) ||
           !allowedArmors ||
           !allowedArmors.includes(action.armorCardId) ||
-          !armorCard ||
-          armorCard.level !== 'A'
+          (configuredArmorId !== undefined &&
+            allowedArmors.includes(configuredArmorId) &&
+            action.armorCardId !== configuredArmorId) ||
+          !effArmorCard ||
+          effArmorCard.level !== 'A'
         ) {
           throw new Error(
-            `Illegal Armor Evolution ${action.armorCardId} for Rookie ${card.id} (#${card.no}).`,
+            `Illegal Armor Evolution ${action.armorCardId} for Rookie ${effCard.id} (#${effCard.no}).`,
           );
         }
 
         player.hand.splice(action.handIndex, 1);
         player.battleDigimon = {
-          cardId: armorCard.id,
-          stack: [card.id],
-          currentHp: armorCard.hp,
-          maxHp: armorCard.hp,
-          effectiveSpecialty: armorCard.specialty ?? card.specialty ?? 'Fire',
+          cardId: effArmorCard.id,
+          stack: [effCard.id],
+          currentHp: effArmorCard.hp,
+          maxHp: effArmorCard.hp,
+          effectiveSpecialty: effArmorCard.specialty ?? effCard.specialty ?? 'Fire',
         };
 
         state.events.push({
           type: 'rookiePlaced',
           side,
-          cardId: card.id,
-          hp: card.hp,
+          cardId: effCard.id,
+          hp: effCard.hp,
         });
         state.events.push({
           type: 'digivolved',
           side,
-          fromCardId: card.id,
-          toCardId: armorCard.id,
-          hp: armorCard.hp,
+          fromCardId: effCard.id,
+          toCardId: effArmorCard.id,
+          hp: effArmorCard.hp,
           method: 'armor',
         });
       } else {
+        const penaltyDivisor: 1 | 2 | 4 =
+          effCard.level === 'C' ? 2 : effCard.level === 'U' ? 4 : 1;
+        const entryHp =
+          penaltyDivisor > 1
+            ? applyNumericMode(effCard.hp, 'divide', penaltyDivisor, 'hp')
+            : effCard.hp;
+
         player.hand.splice(action.handIndex, 1);
         const activeDigimon: ActiveDigimon = {
-          cardId: card.id,
+          cardId: effCard.id,
           stack: [],
-          currentHp: card.hp,
-          maxHp: card.hp,
-          effectiveSpecialty: card.specialty ?? 'Fire',
+          currentHp: entryHp,
+          maxHp: entryHp,
+          effectiveSpecialty: effCard.specialty ?? 'Fire',
+          ...(penaltyDivisor > 1 ? { statPenaltyDivisor: penaltyDivisor } : {}),
         };
         player.battleDigimon = activeDigimon;
 
         state.events.push({
           type: 'rookiePlaced',
           side,
-          cardId: card.id,
-          hp: card.hp,
+          cardId: effCard.id,
+          hp: entryHp,
         });
       }
 
@@ -1052,20 +1122,21 @@ export function applyAction( currentState: MatchState, action: Action): MatchSta
       if (cardId === undefined) {
         throw new Error(`Invalid handIndex ${action.handIndex} for addToDp.`);
       }
-      const card = getCardById(cardId);
-      if (!card || card.kind !== 'Digimon' || card.level === 'A') {
+      const partnerConfig = state.config.partnerConfig?.[side];
+      const effCard = getEffectiveCardData(cardId, partnerConfig) ?? getCardById(cardId);
+      if (!effCard || effCard.kind !== 'Digimon' || effCard.level === 'A') {
         throw new Error(`Card ${cardId} cannot be placed in the DP Slot.`);
       }
 
       player.hand.splice(action.handIndex, 1);
-      player.dpSlot.push(card.id);
-      player.dpTotal = computeDpTotal(player.dpSlot);
+      player.dpSlot.push(effCard.id);
+      player.dpTotal = computeDpTotal(player.dpSlot, partnerConfig);
 
       state.events.push({
         type: 'dpCardAdded',
         side,
-        cardId: card.id,
-        plusP: card.plusP,
+        cardId: effCard.id,
+        plusP: effCard.plusP,
         newDpTotal: player.dpTotal,
       });
       state.events.push({
@@ -1073,7 +1144,7 @@ export function applyAction( currentState: MatchState, action: Action): MatchSta
         side,
         from: 'hand',
         to: 'dpSlot',
-        cardIds: [card.id],
+        cardIds: [effCard.id],
         count: 1,
       });
       return state;
@@ -1260,9 +1331,8 @@ export function applyAction( currentState: MatchState, action: Action): MatchSta
       };
       state.battle.effectiveAttacks[side] = action.slot;
 
-      const active = player.battleDigimon;
-      const card = active ? getCardById(active.cardId) : undefined;
-      state.battle.computedPowers[side] = card?.attacks?.[action.slot]?.power ?? 0;
+      const slotPowers = getActiveDigimonSlotPowers(state, side);
+      state.battle.computedPowers[side] = slotPowers[action.slot];
 
       state.events.push({
         type: 'attackChosen',
