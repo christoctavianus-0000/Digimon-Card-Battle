@@ -453,6 +453,7 @@ export const App: React.FC = () => {
               opponentName={activeMatch.opponent.name}
               opponentDeckName={activeMatch.opponent.deckName}
               opponentAvatarCardId={activeMatch.opponent.representativeCardId}
+              opponentArmorCardId={activeMatch.opponent.armorCardId}
               opponentPreserveExactOrder={activeMatch.opponent.preserveExactOrder}
               opponentDisableArmorOnCardIds={activeMatch.opponent.disableArmorOnCardIds}
               playerPartnerConfig={storeState.partnerConfigs}

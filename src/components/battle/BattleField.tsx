@@ -26,8 +26,8 @@ import type {
   PartnerConfigMap,
   PlayerSide,
   Specialty,
-  SupportSlotCard,
   VisibleBattleContext,
+  VisibleSupportSlotCard,
   XEffect,
 } from '../../types/game';
 import { getCardById, getCardImageUrl } from '../../data/cards';
@@ -669,19 +669,21 @@ export interface CenterClashZoneProps {
   battle: VisibleBattleContext | null;
   phase: MatchPhase;
   activePlayer: PlayerSide;
+  partnerConfigs?: Partial<Record<PlayerSide, PartnerConfigMap>>;
   activeClashBanner: ClashStepBanner | null;
   clashQueueCount: number;
   onAdvanceClashBanner: () => void;
-  onInspectCard: (cardId: CardId) => void;
+  onInspectCard: (cardId: CardId, side: PlayerSide) => void;
 }
 
 const SupportSlotBox: React.FC<{
   side: PlayerSide;
-  supportCard: SupportSlotCard | null;
+  supportCard: VisibleSupportSlotCard | null;
   decided?: boolean;
   bothDecided?: boolean;
-  onInspectCard: (cardId: CardId) => void;
-}> = ({ side, supportCard, decided, bothDecided, onInspectCard }) => {
+  partnerConfig?: PartnerConfigMap;
+  onInspectCard: (cardId: CardId, side: PlayerSide) => void;
+}> = ({ side, supportCard, decided, bothDecided, partnerConfig, onInspectCard }) => {
   const label = side === 'player' ? 'YOUR SUPPORT SLOT' : 'OPPONENT SUPPORT SLOT';
 
   if (!supportCard) {
@@ -697,7 +699,7 @@ const SupportSlotBox: React.FC<{
           <div className="ddcb-zone-label">{label}</div>
           <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', marginTop: 2 }}>
             {decided
-              ? side === 'opponent' && !bothDecided
+              ? !bothDecided
                 ? 'Support Decision Locked In'
                 : 'Passed Support'
               : 'No Support Card Set'}
@@ -707,12 +709,42 @@ const SupportSlotBox: React.FC<{
     );
   }
 
-  const card = getCardById(supportCard.cardId);
+  if (supportCard.cardId === null) {
+    return (
+      <div className="ddcb-support-slot-card" title="Face-down until both sides finish selecting">
+        <div className="ddcb-card-back" style={{ width: 52, height: 52, flexShrink: 0 }} />
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span className="ddcb-zone-label">{label}</span>
+            <span
+              className="ddcb-mini-badge"
+              style={{
+                fontSize: '0.6rem',
+                borderColor: '#f59e0b',
+                color: '#fde68a',
+              }}
+            >
+              {supportCard.source === 'deckTop' ? 'DECK TOP' : 'FACE-DOWN'}
+            </span>
+          </div>
+          <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#e2e8f0', marginTop: 2 }}>
+            Blind Support Set (Hidden)
+          </div>
+          <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+            Reveals when both sides finish selecting.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const supportCardId = supportCard.cardId;
+  const card = getEffectiveCardData(supportCardId, partnerConfig) ?? getCardById(supportCardId);
 
   return (
     <div
       className="ddcb-support-slot-card clickable"
-      onClick={() => onInspectCard(supportCard.cardId)}
+      onClick={() => onInspectCard(supportCardId, side)}
       title="Click to inspect Support card"
     >
       <div className="ddcb-support-thumb">
@@ -742,7 +774,7 @@ const SupportSlotBox: React.FC<{
             textOverflow: 'ellipsis',
           }}
         >
-          #{card?.no} {card?.name ?? `Card #${supportCard.cardId}`}
+          #{card?.no} {card?.name ?? `Card #${supportCardId}`}
         </div>
         <div
           style={{
@@ -770,6 +802,7 @@ export const CenterClashZone: React.FC<CenterClashZoneProps> = ({
   battle,
   phase,
   activePlayer,
+  partnerConfigs,
   activeClashBanner,
   clashQueueCount,
   onAdvanceClashBanner,
@@ -791,6 +824,7 @@ export const CenterClashZone: React.FC<CenterClashZoneProps> = ({
         supportCard={battle?.supportCards.opponent ?? null}
         decided={battle?.supportDecided?.opponent}
         bothDecided={bothSupportsDecided}
+        partnerConfig={partnerConfigs?.opponent}
         onInspectCard={onInspectCard}
       />
 
@@ -905,157 +939,9 @@ export const CenterClashZone: React.FC<CenterClashZoneProps> = ({
         supportCard={battle?.supportCards.player ?? null}
         decided={battle?.supportDecided?.player}
         bothDecided={bothSupportsDecided}
+        partnerConfig={partnerConfigs?.player}
         onInspectCard={onInspectCard}
       />
-    </div>
-  );
-};
-
-// ---------------------------------------------------------------------------
-// Card Inspection Detail Modal
-// ---------------------------------------------------------------------------
-
-export const CardDetailModal: React.FC<{
-  cardId: CardId | null;
-  onClose: () => void;
-}> = ({ cardId, onClose }) => {
-  if (cardId === null) return null;
-  const card = getCardById(cardId);
-  if (!card) return null;
-
-  return (
-    <div className="ddcb-modal-backdrop" onClick={onClose}>
-      <div className="ddcb-modal-card" onClick={(e) => e.stopPropagation()}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: '1rem',
-            paddingBottom: '0.6rem',
-            borderBottom: '1px solid #2b4c85',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <span
-              style={{
-                fontFamily: 'monospace',
-                fontSize: '0.95rem',
-                fontWeight: 900,
-                color: '#38bdf8',
-              }}
-            >
-              No. {card.no}
-            </span>
-            <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900 }}>{card.name}</h3>
-            <SpecialtyBadge specialty={card.specialty} />
-          </div>
-          <button type="button" className="ddcb-hud-btn" onClick={onClose}>
-            <X size={16} />
-            <span>Close</span>
-          </button>
-        </div>
-
-        <div className="ddcb-inspector-layout">
-          <div className="ddcb-inspector-art">
-            <CardArtwork card={card} />
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', width: '100%' }}>
-            {/* Card Core Stats */}
-            {card.kind === 'Digimon' ? (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                <span className="ddcb-mini-badge" style={{ fontSize: '0.78rem' }}>
-                  Level: <strong>{card.level}</strong>
-                </span>
-                <span className="ddcb-mini-badge hp" style={{ fontSize: '0.78rem' }}>
-                  HP: <strong>{card.hp}</strong>
-                </span>
-                <span className="ddcb-mini-badge dp" style={{ fontSize: '0.78rem' }}>
-                  DP Cost: <strong>{card.dp}</strong>
-                </span>
-                <span className="ddcb-mini-badge plusp" style={{ fontSize: '0.78rem' }}>
-                  DP Slot (+P): <strong>+{card.plusP}</strong>
-                </span>
-                {card.isPartner && (
-                  <span
-                    className="ddcb-mini-badge"
-                    style={{
-                      fontSize: '0.78rem',
-                      borderColor: '#fbbf24',
-                      color: '#fde68a',
-                    }}
-                  >
-                    Partner / Armor Card
-                  </span>
-                )}
-              </div>
-            ) : (
-              <div>
-                <span className="ddcb-mini-badge" style={{ fontSize: '0.78rem' }}>
-                  Card Kind: <strong>Option Card</strong>
-                </span>
-              </div>
-            )}
-
-            {/* Attacks Table for Digimon */}
-            {card.attacks && (
-              <div className="ddcb-attacks-list">
-                <div
-                  style={{
-                    fontSize: '0.72rem',
-                    fontWeight: 800,
-                    color: '#93c5fd',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  Battle Attacks
-                </div>
-                {(['circle', 'triangle', 'x'] as AttackSlot[]).map((slot) => {
-                  const atk = card.attacks![slot];
-                  return (
-                    <div key={slot} className="ddcb-attack-row">
-                      <AttackSymbolSvg slot={slot} size={20} />
-                      <span className="ddcb-attack-name">{atk.name}</span>
-                      <span>
-                        {slot === 'x' && atk.effect ? (
-                          <XEffectBadge effect={atk.effect} />
-                        ) : null}
-                      </span>
-                      <span className="ddcb-attack-power">{atk.power}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Support / Option Effect */}
-            <div
-              style={{
-                padding: '0.65rem 0.8rem',
-                background: 'rgba(6, 12, 28, 0.9)',
-                border: '1px solid #2b4c85',
-                borderRadius: 8,
-              }}
-            >
-              <div
-                style={{
-                  fontSize: '0.72rem',
-                  fontWeight: 800,
-                  color: '#fbbf24',
-                  textTransform: 'uppercase',
-                  marginBottom: 4,
-                }}
-              >
-                {card.kind === 'Option' ? 'Option Effect' : 'Support Effect'}
-              </div>
-              <div style={{ fontSize: '0.86rem', lineHeight: 1.45, color: '#f1f5f9' }}>
-                <SupportTextWithTokens text={card.supportText} iconSize={16} />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };
@@ -1068,6 +954,7 @@ export interface ZoneInspectModalProps {
   title: string;
   subtitle?: string;
   cardIds: CardId[];
+  partnerConfig?: PartnerConfigMap;
   onSelectCard: (cardId: CardId) => void;
   onClose: () => void;
 }
@@ -1076,6 +963,7 @@ export const ZoneInspectModal: React.FC<ZoneInspectModalProps> = ({
   title,
   subtitle,
   cardIds,
+  partnerConfig,
   onSelectCard,
   onClose,
 }) => {
@@ -1112,7 +1000,7 @@ export const ZoneInspectModal: React.FC<ZoneInspectModalProps> = ({
         ) : (
           <div className="ddcb-pile-grid">
             {cardIds.map((id, idx) => {
-              const c = getCardById(id);
+              const c = getEffectiveCardData(id, partnerConfig) ?? getCardById(id);
               return (
                 <div
                   key={`${id}-${idx}`}
@@ -1241,9 +1129,9 @@ export function describeGameEvent(
       };
     case 'supportPlayed':
       return {
-        text: `${formatActor(event.side, opponentName)} played Support ${cardLabel(
-          event.cardId
-        )} from ${event.source === 'deckTop' ? 'Top of Online Deck' : 'Hand'}.`,
+        text: `${formatActor(event.side, opponentName)} locked in a Support card (${
+          event.source === 'deckTop' ? 'Top of Online Deck' : 'Hand'
+        }).`,
         tone: event.side,
       };
     case 'supportPassed':
@@ -1459,13 +1347,15 @@ export const RulesHelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) =
           <div>
             <strong style={{ color: '#38bdf8' }}>2. Preparation / Digivolve Phase:</strong>
             <div>
-              • Draw from your Online Deck until you have <strong>4 cards</strong> in Hand.
+              • Both players&apos; Hands are <strong>open (face-up)</strong>! Draw until you have{' '}
+              <strong>4 cards</strong> in Hand at the start of your Draw Phase.
               <br />• Sacrifice up to <strong>1 Digimon card per turn</strong> from Hand to your{' '}
               <strong>DP Slot (+P)</strong>. Your DP Slot persists across KOs!
               <br />• <strong>Partner Armor Evolution (R P → A):</strong> When placing a Partner
               Rookie during Rookie Placement, choose to deploy it as one of its Armor forms (Veemon
               has 3; others have 2) at <strong>0 DP</strong> without consuming the DP Slot, or keep it
-              as a normal Rookie (R P) able to Digivolve into C/U!
+              as a normal Rookie (R P) able to Digivolve into C/U! Equipped Digi-Parts customize the
+              Partner Rookie (R P) card; Armor (A) forms keep fixed printed stats.
               <br />• <strong>Normal Digivolve (R / R P → C → U):</strong> Matches Specialty and
               requires accumulated DP ≥ target&apos;s DP cost. Consumes all cards in your DP Slot and
               resets HP to the new form&apos;s max HP.
@@ -1481,10 +1371,11 @@ export const RulesHelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) =
               • Both players secretly choose <AttackSymbolSvg slot="circle" size={14} /> Circle,{' '}
               <AttackSymbolSvg slot="triangle" size={14} /> Triangle, or{' '}
               <AttackSymbolSvg slot="x" size={14} /> Cross.
-              <br />• Both players may play <strong>1 Battle Support Card</strong> (#191–#292 or a
-              Digimon Support effect) from Hand, blind-play the{' '}
+              <br />• Both players then secretly lock in <strong>1 Battle Support Card</strong>{' '}
+              (#191–#292 or a Digimon Support effect) from Hand, blind-play the{' '}
               <strong>Top Card of their Online Deck</strong> (Digivolve Options #293–#300 fizzle if
-              flipped), or Pass.
+              flipped), or Pass. Attacks and Support cards stay hidden until both sides finish
+              selecting!
               <br />• The Turn Player attacks first by default unless overridden by{' '}
               <strong>1st Attack</strong> or Support effects. Surviving Digimon keep their remaining HP
               into the next turn!

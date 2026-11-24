@@ -22,7 +22,7 @@ Each player has 6 distinct zones:
 | Zone ID (`Zone`) | In-Game Name | Visibility | Ordering | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `online` | **Online Deck** | Hidden (count & top card back visible) | Ordered stack (top = index `0`) | Draw pile (starts at 30 cards). When it reaches `0` cards, examine [Deck-Out Rules](#82-deck-out-online-deck-reaches-0). |
-| `hand` | **Hand** | Visible to owner; hidden to opponent (card backs / count visible) | Ordered list (max 4 in normal draw; can exceed 4 temporarily via Support draw effects) | Holds up to 4 cards during normal Draw Phase. Effects like `Draw 3 Cards` can push Hand size above 4 (up to `maxHandSizeCap = 10`). |
+| `hand` | **Hand** | Public (Open Hand — all cards visible face-up to both players) | Ordered list (max 4 in normal draw; can exceed 4 temporarily via Support draw effects) | Holds up to 4 cards during normal Draw Phase. Effects like `Draw 3 Cards` can push Hand size above 4 (up to `maxHandSizeCap = 10`). |
 | `battle` | **Battle Area (Active Stack)** | Public | Stack (top = active Digimon; beneath = prior digivolution stages) | Contains the active Digimon card and any cards beneath it in its digivolution stack. Only the **top card's** stats, Level, Specialty, and Attacks are active. |
 | `dpSlot` | **DP Slot** | Public (top card & total DP count/value visible) | Stack (top = most recently placed card) | Cards sacrificed from Hand for Digivolve Points (`+P`). Accumulates DP values across turns. **Persists across KOs!** |
 | `support` | **Support / Option Slot** | Face-down when played; Public when revealed | Single card slot (0 or 1 card) | Holds the card played during the Battle Phase Support step (or Digivolve Phase Option step) until resolution completes, then moves to `offline`. |
@@ -156,11 +156,11 @@ Level `A` (Armor) Digimon are virtual evolutions invoked directly when playing a
 2. **Zero DP Cost, DP Slot Preservation, & 30-Card Conservation**:
    - Armor cards cannot be added to a deck (`0` copies allowed).
    - Evolving into Armor on Partner entry requires **0 DP** and **DOES NOT discard cards in the `dpSlot`!**
-   - Sets active `hp` to the Armor Digimon's printed (plus Partner Digi-Part) `hp`.
+   - Sets active `hp` to the Armor Digimon's fixed printed `hp` (Armor evolutions always use their printed stats).
    - Because Armor forms do not come from the 30-card deck, when an active Armor Digimon is KO'd or De-Armored (`#298`), only the underlying deck cards in its stack (`[partnerId, ...]`) move to `offline` — the virtual Level `A` card never enters `offline`, `hand`, or `online`.
 3. **Partner Digi-Parts (Up to 3 Equipped) & Battle Armor Selection**:
-   - Each Partner card (`R P`) can equip up to **3 Digi-Parts** (`#000`–`#127`) in the Partner Studio to modify HP, Attack Powers (`○`/`△`/`✕`), X-Effect, DP `+P`, or Support Effect. HP, Attack Power, and X-Effect Digi-Part changes also apply to the Partner's Armor (`A`) forms.
-   - Players can select a specific `selectedArmorCardId` for each Partner card to determine which Armor form it evolves into in battle.
+   - Each Partner card (`R P`) can equip up to **3 Digi-Parts** (`#000`–`#127`) in the Partner Studio to modify that Partner Rookie (`R P`) card's HP, Attack Powers (`○`/`△`/`✕`), X-Effect, DP `+P`, or Support Effect. Armor (`A`) evolutions do **not** inherit Partner Digi-Part bonuses and keep their fixed printed stats.
+   - Players (and canonical campaign opponents via `armorCardId`) select a specific `selectedArmorCardId` for a Partner card to determine which Armor form it evolves into in battle.
 
 ### 6.5 Direct Champion (`C`) / Ultimate (`U`) Entry & Stat Penalty
 Players may also deploy a Level `C` (Champion) or Level `U` (Ultimate) Digimon card directly into an empty Battle Slot during the Entry step without first evolving from a Rookie, subject to strict stat penalties:
@@ -174,14 +174,14 @@ Players may also deploy a Level `C` (Champion) or Level `U` (Ultimate) Digimon c
 
 ## 7. Battle Phase & Resolution Order
 
-### 7.1 Step 1 — Attack Selection
-Both players select one of their Active Digimon's three attacks:
+### 7.1 Step 1 — Attack Selection (Secret)
+Both players secretly select one of their Active Digimon's three attacks (`chosenAttacks` remain hidden from the opponent until both players also finish Support selection):
 - `circle` (○)
 - `triangle` (△)
 - `x` (✕)
 
-### 7.2 Step 2 — Support / Option Selection
-Each player chooses one of three options for their Support Slot:
+### 7.2 Step 2 — Support / Option Selection (Secret Until Both Decide)
+Each player chooses one of three options for their Support Slot (face-down until **both** players have finished both Attack and Support selection, at which point chosen attacks and Support cards reveal simultaneously):
 1. **Play from Hand**: Select 1 Battle-Support card from `hand` (a `Digimon` card or a Battle Support `Option` card `#191–#292` — **never** a Digivolve-phase Option `#293–#300`) and place it face-down in `support`.
 2. **Play from Top of Online Deck (Blind Support)**: Take the top card (`index 0`) of `online` without looking at it first and place it face-down in `support`. (Requires `online.length >= 1`). If a Digivolve-phase Option card (`#293–#300`) is blind-flipped here, it has no Support effect and fizzles directly to `offline` during cleanup.
 3. **Pass**: Play no Support card.
@@ -227,7 +227,7 @@ After both Support cards have finished resolving:
      - `removeAbility` has not been applied to that player.
    - **Support-Granted Abilities (`grantAbility`)**:
      - Abilities granted by a Support/Option card (such as `041 Panjyamon` granting `[[triangle]] Counter`, `191 Golden Banana` granting `any Counter`, `205 Dark Bone` / `073 Rosemon` granting `Eat-Up HP`) apply to the player's **currently chosen attack** regardless of whether it is `circle`, `triangle`, or `x`.
-     - If **Jamming** is active on either Digimon's `x` attack, Jamming disables printed `xEffect` abilities on the opponent (configurable whether Jamming also blocks Support-granted abilities; default `jammingBlocksPrintedXEffectOnly = false`, i.e., Jamming prevents `xEffect` abilities during combat).
+     - If **Jamming** is active on either Digimon's `x` attack, Jamming disables printed `xEffect` abilities on the opponent while preserving Support-granted abilities (such as `#191 Golden Banana` Counter or `#205 Dark Bone` Eat-Up HP).
 
 ### 7.4 Step 4 — Cross-Attack (`xEffect`) Abilities
 After Support cards resolve and before damage is dealt, evaluate active `xEffect` and `grantAbility` modifiers in the following order:

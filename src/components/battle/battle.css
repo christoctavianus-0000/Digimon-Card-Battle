@@ -18,6 +18,7 @@
   --text-main: #f1f5f9;
   --text-muted: #94a3b8;
   --text-dim: #64748b;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 
   /* Specialty palette */
   --spec-fire-bg: linear-gradient(135deg, #991b1b 0%, #ef4444 100%);
@@ -188,7 +189,7 @@
   border-radius: 50%;
   border: 2px solid #475569;
   background: #0f172a;
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 220ms var(--ease-out), border-color 220ms ease, box-shadow 220ms ease;
 }
 
 .ddcb-ko-orb.filled.player {
@@ -272,7 +273,7 @@
   font-size: 0.76rem;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: transform 150ms var(--ease-out), border-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
 }
 
 .ddcb-hud-btn:hover {
@@ -280,6 +281,10 @@
   border-color: var(--accent-cyan);
   color: #ffffff;
   box-shadow: 0 0 8px rgba(0, 229, 255, 0.3);
+}
+
+.ddcb-hud-btn:active {
+  transform: scale(0.97);
 }
 
 .ddcb-hud-btn.active {
@@ -379,7 +384,7 @@
   border-radius: 8px;
   min-height: 92px;
   cursor: pointer;
-  transition: all 0.16s ease;
+  transition: transform 160ms var(--ease-out), border-color 160ms ease, background-color 160ms ease;
   position: relative;
   text-align: center;
 }
@@ -388,6 +393,10 @@
   border-color: var(--accent-cyan);
   background: rgba(14, 30, 64, 0.9);
   transform: translateY(-1px);
+}
+
+.ddcb-zone-box:active {
+  transform: scale(0.97);
 }
 
 .ddcb-zone-box.interactive-highlight {
@@ -432,14 +441,55 @@
   font-weight: 600;
 }
 
-/* Opponent Face-down Hand Cards */
+/* Opponent Open Hand Cards (Face-Up per PS1 DDCB Rules) */
 .ddcb-opp-hand-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+  min-height: 58px;
+}
+
+.ddcb-opp-hand-card {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  margin-top: 0.4rem;
-  min-height: 58px;
+  gap: 0.35rem;
+  padding: 0.28rem 0.35rem;
+  border-radius: 6px;
+  background: rgba(8, 17, 38, 0.92);
+  border: 1px solid #335c9e;
+  color: #f1f5f9;
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+  transition: transform 150ms var(--ease-out), border-color 150ms ease, background-color 150ms ease;
+}
+
+.ddcb-opp-hand-card:hover {
+  border-color: var(--accent-cyan);
+  background: rgba(16, 36, 74, 0.96);
+  transform: translateY(-1px);
+}
+
+.ddcb-opp-hand-card:active {
+  transform: scale(0.97);
+}
+
+.ddcb-opp-hand-thumb {
+  width: 30px;
+  height: 36px;
+  border-radius: 4px;
+  overflow: hidden;
+  flex-shrink: 0;
+  border: 1px solid #475569;
+  background: #050a18;
+}
+
+.ddcb-opp-hand-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .ddcb-card-back {
@@ -485,7 +535,7 @@
   border-radius: 12px;
   padding: 0.75rem;
   position: relative;
-  transition: all 0.2s ease;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
 }
 
 .ddcb-battle-slot.player-slot {
@@ -727,7 +777,7 @@
   border: 1px solid #1e3a6d;
   border-radius: 7px;
   font-size: 0.8rem;
-  transition: all 0.15s ease;
+  transition: transform 150ms var(--ease-out), border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
 }
 
 .ddcb-attack-row.selectable {
@@ -741,6 +791,10 @@
   border-color: var(--accent-amber);
   transform: translateX(3px);
   box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
+}
+
+.ddcb-attack-row.selectable:active {
+  transform: scale(0.97);
 }
 
 .ddcb-attack-row.selected-attack {
@@ -1013,7 +1067,7 @@
   border: 2px solid #294a80;
   border-radius: 10px;
   padding: 0.55rem;
-  transition: all 0.16s ease;
+  transition: transform 160ms var(--ease-out), border-color 160ms ease, box-shadow 160ms ease;
   position: relative;
 }
 
@@ -1137,8 +1191,12 @@
   align-items: center;
   justify-content: center;
   gap: 0.28rem;
-  transition: all 0.14s ease;
+  transition: transform 140ms var(--ease-out), border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
   text-align: center;
+}
+
+.ddcb-action-btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .ddcb-action-btn.primary {
@@ -1198,7 +1256,7 @@
   border: 2px solid #fde68a;
   color: #090d16;
   box-shadow: 0 0 16px rgba(245, 158, 11, 0.45);
-  transition: all 0.15s ease;
+  transition: transform 150ms var(--ease-out), border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -1208,6 +1266,10 @@
   transform: translateY(-1px) scale(1.02);
   background: linear-gradient(180deg, #fbbf24 0%, #d97706 100%);
   box-shadow: 0 0 22px rgba(251, 191, 36, 0.75);
+}
+
+.ddcb-phase-cta-btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 /* ============================================================================
@@ -1336,13 +1398,17 @@
   border: 1px solid #335c9e;
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: transform 150ms var(--ease-out), border-color 150ms ease;
   text-align: center;
 }
 
 .ddcb-pile-card-item:hover {
   border-color: var(--accent-cyan);
   transform: translateY(-2px);
+}
+
+.ddcb-pile-card-item:active {
+  transform: scale(0.97);
 }
 
 .ddcb-pile-card-item img {

@@ -18,10 +18,11 @@ Parent workspace rules: `d:\My AI Project\Mini Game\AGENTS.md`
 1. **Types & Effect DSL (`src/types/game.ts`, `src/types/effects.ts`):**
    - `MatchState` is immutable; engine transitions are pure functions with injectable RNG (`src/engine/rng.ts`).
    - All 301 card effects live declaratively in `src/data/effects/` (`fire-ice.ts`, `nature-dark-rare.ts`, `option.ts`, `index.ts`). Keep coverage at 100% with zero `unimplemented` ops.
-2. **Engine Rules (`src/engine/match.ts`, `src/engine/battle.ts`, `src/engine/effectInterpreter.ts`):**
-   - `getVisibleState` MUST sanitize hidden opponent information (hand card identities, hidden facedown support/deck order) before returning state to UI or AI.
-   - `RulesConfig` MUST honor opponent deck flags: `preserveDeckOrder` (`preserveExactOrder` for fixed-order decks like Analogman's *Darkness Wave Deck*) and `disableArmorOnCardIds` (`--- no armor` / `[no armor]`), plus forward `armorInfo` from `OpponentDef` / `BaseDeckDef` (`src/data/opponents.ts`).
-   - Isolate `voidSupport` within Substep 3B resolution (`battle.ts` & `effectInterpreter.ts`) so temporary support negation does not leak outside its intended timing window.
+2. **Engine Rules (`src/engine/match.ts`, `src/engine/battle.ts`, `src/engine/effectInterpreter.ts`, `src/data/digiParts.ts`):**
+   - `getVisibleState` exposes open 4-card hands (PS1 face-up hands) while keeping `online` deck order and unrevealed Battle selections (`chosenAttacks`, `effectiveAttacks`, `computedPowers`, `supportCards`, blind deck-top picks, reconstructed unrevealed Support-from-hand cards, and unrevealed battle log events) hidden until both sides finish Support selection (`lastBattle` preserves revealed clash details for UI banners & logs).
+   - Equipped Partner Digi-Parts (`#000`–`#127`) in `getEffectiveCardData` customize only the Partner Rookie (`level === 'R P'`); Armor evolutions (`level === 'A'`) keep their fixed printed stats.
+   - `RulesConfig` MUST honor opponent deck flags: `preserveDeckOrder` (`preserveExactOrder` for fixed-order decks like Analogman's *Darkness Wave Deck*), `disableArmorOnCardIds` (`--- no armor` / `[no armor]`), `partnerConfig.opponent` mapped from `opponent.armorCardId`, and forward `armorInfo` from `OpponentDef` / `BaseDeckDef` (`src/data/opponents.ts`).
+   - Isolate `voidSupport` within Substep 3B resolution (`battle.ts` & `effectInterpreter.ts`), and scope `Jamming` to printed `xEffect` abilities while preserving Support-granted abilities (such as `#191 Golden Banana` Counter).
    - Guard Option card eligibility strictly via `canUseDigivolveOptionCard` and status checks such as `notInAbnormal` (e.g., `#299 Speed Digivolve`).
 3. **AI (`src/ai/easy.ts`, `src/ai/normal.ts`, `src/ai/hard.ts`):**
    - Never bypass `getVisibleState`. Validate changes against `src/ai/__tests__/ai.test.ts` and `src/engine/__tests__/qa_simulation.test.ts`.

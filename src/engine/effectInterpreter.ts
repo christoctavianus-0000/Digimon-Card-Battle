@@ -1297,62 +1297,7 @@ export function registerEffectRegistry(registry: EffectRegistry): void {
 }
 
 /**
- * Fallback definitions for Digivolve-phase Option cards (293..300) and common test cards,
- * plus automatic text parser fallback if `src/data/effects/index.ts` is not yet injected.
- */
-const BUILTIN_DIGIVOLVE_OPTION_EFFECTS: Record<number, CardEffectDef> = {
-  293: {
-    cardId: 293,
-    timing: 'digivolvePhase',
-    ops: [{ op: 'digivolveModifier', ignoreSpecialty: true, ignoreLevel: true, ignoreDp: true }],
-  },
-  294: {
-    cardId: 294,
-    timing: 'digivolvePhase',
-    ops: [{ op: 'digivolveModifier', requireFromLevels: ['A'], allowedToLevels: ['C', 'U'] }],
-  },
-  295: {
-    cardId: 295,
-    timing: 'digivolvePhase',
-    ops: [{ op: 'digivolveModifier', ignoreSpecialty: true, extraDp: 20 }],
-  },
-  296: {
-    cardId: 296,
-    timing: 'digivolvePhase',
-    ops: [{ op: 'digivolveModifier', allowSameLevel: true, ignoreSpecialty: true }],
-  },
-  297: {
-    cardId: 297,
-    timing: 'digivolvePhase',
-    ops: [{ op: 'digivolveModifier', allowSkipLevel: true, requireFromLevels: ['R', 'R P'], allowedToLevels: ['U'] }],
-  },
-  298: {
-    cardId: 298,
-    timing: 'digivolvePhase',
-    ops: [{ op: 'devolve', target: 'self', levels: 1, requireFromLevels: ['A'], toLevel: 'R' }],
-  },
-  299: {
-    cardId: 299,
-    timing: 'digivolvePhase',
-    ops: [{ op: 'digivolveModifier', ignoreDp: true, notInAbnormal: true }],
-  },
-  300: {
-    cardId: 300,
-    timing: 'digivolvePhase',
-    ops: [
-      {
-        op: 'devolve',
-        target: 'self',
-        levels: 1,
-        requireFromLevels: ['C', 'U'],
-        onSuccess: [{ op: 'hp', target: 'self', mode: 'multiply', value: 2 }],
-      },
-    ],
-  },
-};
-
-/**
- * Resolves a card's `CardEffectDef` from custom registry, global registry, equipped Partner Digi-Parts, or built-in definitions.
+ * Resolves a card's `CardEffectDef` from custom registry, global registry, equipped Partner Digi-Parts, or `EFFECT_REGISTRY`.
  */
 export function resolveCardEffectDef(
   cardId: CardId,
@@ -1371,9 +1316,6 @@ export function resolveCardEffectDef(
   }
   if (EFFECT_REGISTRY[cardId]) {
     return EFFECT_REGISTRY[cardId];
-  }
-  if (BUILTIN_DIGIVOLVE_OPTION_EFFECTS[cardId]) {
-    return BUILTIN_DIGIVOLVE_OPTION_EFFECTS[cardId];
   }
   return undefined;
 }

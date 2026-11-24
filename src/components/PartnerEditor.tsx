@@ -179,9 +179,10 @@ export const PartnerEditor: React.FC<PartnerEditorProps> = ({
             </h2>
           </div>
           <p style={{ margin: '4px 0 0', fontSize: '0.84rem', color: '#cbd5e1' }}>
-            Equip up to <strong>3 Digi-Parts</strong> per Partner card (stats &amp; X-Effect carry over
-            into Armor Evolutions) and choose which <strong>Armor (A)</strong> card enters battle when
-            you Armor Evolve.
+            Equip up to <strong>3 Digi-Parts</strong> per Partner Rookie (<strong>R P</strong>) card
+            to customize its HP, Attack Powers, +P, X-Effect, or Support Effect, and choose which{' '}
+            <strong>Armor (A)</strong> card (fixed printed stats) enters battle when you Armor
+            Evolve.
           </p>
         </div>
 
@@ -236,7 +237,8 @@ export const PartnerEditor: React.FC<PartnerEditorProps> = ({
                 display: 'flex',
                 alignItems: 'center',
                 gap: '10px',
-                transition: 'all 0.15s ease',
+                transition:
+                  'border-color 160ms ease, background-color 160ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1)',
               }}
             >
               <div
@@ -495,10 +497,8 @@ export const PartnerEditor: React.FC<PartnerEditorProps> = ({
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {armorIds.map((armorId) => {
-                const baseArmor = getCardById(armorId);
-                const effArmor =
-                  getEffectiveCardData(armorId, storeState.partnerConfigs) ?? baseArmor;
-                if (!baseArmor || !effArmor) return null;
+                const armorCard = getCardById(armorId);
+                if (!armorCard) return null;
                 const isSelectedArmor = custom.selectedArmorCardId === armorId;
 
                 return (
@@ -532,7 +532,7 @@ export const PartnerEditor: React.FC<PartnerEditorProps> = ({
                         flexShrink: 0,
                       }}
                     >
-                      <CardArtwork card={effArmor} />
+                      <CardArtwork card={armorCard} />
                     </div>
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div
@@ -544,7 +544,7 @@ export const PartnerEditor: React.FC<PartnerEditorProps> = ({
                         }}
                       >
                         <strong style={{ fontSize: '0.88rem' }}>
-                          #{effArmor.no} {effArmor.name}
+                          #{armorCard.no} {armorCard.name}
                         </strong>
                         {isSelectedArmor && (
                           <span
@@ -573,13 +573,10 @@ export const PartnerEditor: React.FC<PartnerEditorProps> = ({
                           flexWrap: 'wrap',
                         }}
                       >
-                        <SpecialtyBadge specialty={effArmor.specialty} />
-                        <span className="ddcb-mini-badge hp">
-                          HP {effArmor.hp}
-                          {renderStatDelta(effArmor.hp, baseArmor.hp)}
-                        </span>
+                        <SpecialtyBadge specialty={armorCard.specialty} />
+                        <span className="ddcb-mini-badge hp">HP {armorCard.hp}</span>
                       </div>
-                      {effArmor.attacks && baseArmor.attacks && (
+                      {armorCard.attacks && (
                         <div
                           style={{
                             display: 'flex',
@@ -592,32 +589,20 @@ export const PartnerEditor: React.FC<PartnerEditorProps> = ({
                         >
                           <span>
                             <AttackSymbolSvg slot="circle" size={11} />{' '}
-                            {effArmor.attacks.circle.power}
-                            {renderStatDelta(
-                              effArmor.attacks.circle.power,
-                              baseArmor.attacks.circle.power
-                            )}
+                            {armorCard.attacks.circle.power}
                           </span>
                           <span>
                             <AttackSymbolSvg slot="triangle" size={11} />{' '}
-                            {effArmor.attacks.triangle.power}
-                            {renderStatDelta(
-                              effArmor.attacks.triangle.power,
-                              baseArmor.attacks.triangle.power
-                            )}
+                            {armorCard.attacks.triangle.power}
                           </span>
                           <span>
-                            <AttackSymbolSvg slot="x" size={11} /> {effArmor.attacks.x.power}
-                            {renderStatDelta(
-                              effArmor.attacks.x.power,
-                              baseArmor.attacks.x.power
-                            )}
+                            <AttackSymbolSvg slot="x" size={11} /> {armorCard.attacks.x.power}
                           </span>
                         </div>
                       )}
-                      {effArmor.attacks?.x.effect && (
+                      {armorCard.attacks?.x.effect && (
                         <div style={{ marginTop: 4 }}>
-                          <XEffectBadge effect={effArmor.attacks.x.effect} />
+                          <XEffectBadge effect={armorCard.attacks.x.effect} />
                         </div>
                       )}
                     </div>

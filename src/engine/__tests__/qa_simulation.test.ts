@@ -202,14 +202,24 @@ describe('Task 8: QA & Headless AI-vs-AI Simulation Suite', () => {
 
           assertMatchStateInvariants(state, `${matchLabel} [step ${steps}, action=${action.type}]`);
 
-          // Periodically verify getVisibleState information hiding invariants
+          // Periodically verify getVisibleState open-hand & secret-battle invariants
           if (steps % 25 === 0) {
             const visPlayer = getVisibleState(state, 'player');
             const visOpp = getVisibleState(state, 'opponent');
-            expect(visPlayer.players.opponent.hand).toHaveLength(0);
-            expect(visOpp.players.player.hand).toHaveLength(0);
+            expect(visPlayer.players.opponent.hand).toHaveLength(visPlayer.players.opponent.handCount);
+            expect(visOpp.players.player.hand).toHaveLength(visOpp.players.player.handCount);
             expect(visPlayer.players.player.handCount).toBe(state.players.player.hand.length);
             expect(visOpp.players.opponent.handCount).toBe(state.players.opponent.hand.length);
+            if (state.phase === 'attackSelect' || state.phase === 'supportSelect') {
+              if (!state.battle?.supportDecided?.player || !state.battle?.supportDecided?.opponent) {
+                if (state.battle?.chosenAttacks.opponent) {
+                  expect(visPlayer.battle?.chosenAttacks.opponent).toBe('hidden');
+                }
+                if (state.battle?.chosenAttacks.player) {
+                  expect(visOpp.battle?.chosenAttacks.player).toBe('hidden');
+                }
+              }
+            }
           }
         }
 

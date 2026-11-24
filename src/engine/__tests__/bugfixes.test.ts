@@ -68,7 +68,7 @@ function createControlledBattleState(): MatchState {
 }
 
 describe('Regression tests for engine bug fixes', () => {
-  it('1. getVisibleState hides opponent effectiveAttacks and computedPowers until both attacks are chosen', () => {
+  it('1. getVisibleState hides opponent effectiveAttacks and computedPowers until both sides finish Attack AND Support', () => {
     let state = createControlledBattleState();
 
     // Opponent acts first in attackSelect
@@ -84,15 +84,24 @@ describe('Regression tests for engine bug fixes', () => {
     expect(opponentViewBefore.battle?.effectiveAttacks?.opponent).toBe('triangle');
     expect(opponentViewBefore.battle?.computedPowers.opponent).toBeGreaterThan(0);
 
-    // Once player chooses, both sides' attacks & powers become visible
+    // Even once player selects attack (entering supportSelect), opponent's attack stays hidden until Support finishes
     state = applyAction(state, { type: 'chooseAttack', side: 'player', slot: 'circle' });
     const playerViewAfter = getVisibleState(state, 'player');
-    expect(playerViewAfter.battle?.chosenAttacks.opponent).toBe('triangle');
-    expect(playerViewAfter.battle?.effectiveAttacks?.opponent).toBe('triangle');
-    expect(playerViewAfter.battle?.computedPowers.opponent).toBeGreaterThan(0);
+    expect(playerViewAfter.phase).toBe('supportSelect');
+    expect(playerViewAfter.battle?.chosenAttacks.player).toBe('circle');
+    expect(playerViewAfter.battle?.chosenAttacks.opponent).toBe('hidden');
+    expect(playerViewAfter.battle?.effectiveAttacks?.opponent).toBeNull();
+    expect(playerViewAfter.battle?.computedPowers.opponent).toBe(0);
+
+    // Once both sides finish Support, lastBattle exposes both revealed attacks & computed powers
+    state = applyAction(state, { type: 'passSupport', side: 'player' });
+    state = applyAction(state, { type: 'passSupport', side: 'opponent' });
+    const revealedView = getVisibleState(state, 'player');
+    expect(revealedView.lastBattle?.chosenAttacks.opponent).toBe('triangle');
+    expect(revealedView.lastBattle?.computedPowers.opponent).toBeGreaterThan(0);
   });
 
-  it('2. getVisibleState hides opponent supportCards until both sides have decided support', () => {
+  it('2. getVisibleState masks opponent supportCards AND reconstructs unrevealed Support-from-hand card into open hand until both sides decide support', () => {
     let state = createControlledBattleState();
     state = applyAction(state, { type: 'chooseAttack', side: 'player', slot: 'circle' });
     state = applyAction(state, { type: 'chooseAttack', side: 'opponent', slot: 'circle' });
@@ -107,6 +116,12 @@ describe('Regression tests for engine bug fixes', () => {
     const playerViewBefore = getVisibleState(state, 'player');
     expect(playerViewBefore.battle?.supportDecided?.opponent).toBe(true);
     expect(playerViewBefore.battle?.supportCards.opponent).toBeNull();
+    // Reconstructed open hand prevents deducing which card was played face-down
+    expect(playerViewBefore.players.opponent.hand).toEqual([264, 27, 29, 14]);
+    expect(playerViewBefore.players.opponent.handCount).toBe(4);
+    expect(
+      playerViewBefore.events.some((e) => e.type === 'supportPlayed' && e.side === 'opponent')
+    ).toBe(false);
 
     // Opponent's own view still sees their own played support card
     const opponentViewBefore = getVisibleState(state, 'opponent');
@@ -118,6 +133,7 @@ describe('Regression tests for engine bug fixes', () => {
       (e) => e.type === 'supportTriggered' && e.side === 'opponent'
     );
     expect(resolvedEvent).toBeDefined();
+    expect(state.lastBattle?.supportCards.opponent?.cardId).toBe(264);
   });
 
   it('3. preserveDeckOrder keeps exact 30-card deck sequence unshuffled for Analogman', () => {

@@ -15,6 +15,7 @@
  */
 
 import { getCardById } from '../data/cards';
+import { getEffectiveCardData } from '../data/digiParts';
 import { getCardEffect, isBattleSupportOption } from '../data/effects';
 import {
   ARMOR_LINEAGE,
@@ -22,6 +23,7 @@ import {
   getLegalActions,
   getLevelRank,
   otherSide,
+  resolveCardEffectDef,
 } from '../engine';
 import type { Action, AttackSlot, CardData, CardId, MatchState, PlayerSide } from '../types/game';
 import {
@@ -57,16 +59,17 @@ export function computeBattlePayoffMatrix(
   };
 
   // Pre-filter playable hand supports with non-empty effects for fast synergy check
+  const partnerCfg = sanitizedState.config.partnerConfig?.[side];
   const candidateHandSupports: Array<{ handIndex: number; cardId: CardId; cost: number }> = [];
   if (includeHandSupportSynergy) {
     const seenIds = new Set<CardId>();
     for (let i = 0; i < player.hand.length; i++) {
       const cid = player.hand[i]!;
       if (seenIds.has(cid)) continue;
-      const card = getCardById(cid);
+      const card = getEffectiveCardData(cid, partnerCfg) ?? getCardById(cid);
       if (!card) continue;
       if (card.kind !== 'Digimon' && !isBattleSupportOption(cid)) continue;
-      const eff = getCardEffect(cid);
+      const eff = resolveCardEffectDef(cid, undefined, partnerCfg) ?? getCardEffect(cid);
       if (eff.ops.length === 0 || (eff.ops.length === 1 && eff.ops[0]?.op === 'none')) {
         continue;
       }
@@ -203,7 +206,8 @@ export function evaluatePrepBoardState(state: MatchState, side: PlayerSide): num
   const oppActive = oppPlayer.battleDigimon;
 
   if (!active) return -10000;
-  const activeCard = getCardById(active.cardId);
+  const partnerCfg = state.config.partnerConfig?.[side];
+  const activeCard = getEffectiveCardData(active.cardId, partnerCfg) ?? getCardById(active.cardId);
   if (!activeCard) return -10000;
 
   let score = 0;
@@ -241,7 +245,7 @@ export function evaluatePrepBoardState(state: MatchState, side: PlayerSide): num
   // 3. DP Slot Progression toward Evolution Targets Remaining in Hand
   let bestEvoProgressScore = 0;
   for (const cid of player.hand) {
-    const c = getCardById(cid);
+    const c = getEffectiveCardData(cid, partnerCfg) ?? getCardById(cid);
     if (!c || c.kind !== 'Digimon') continue;
 
     const isDirectNextEvo =
@@ -272,7 +276,7 @@ export function evaluatePrepBoardState(state: MatchState, side: PlayerSide): num
   const seenEvoKeys = new Set<string>();
 
   for (const cid of player.hand) {
-    const c = getCardById(cid);
+    const c = getEffectiveCardData(cid, partnerCfg) ?? getCardById(cid);
     if (!c) continue;
 
     // Base card-in-hand conservation value
@@ -527,6 +531,7 @@ export function chooseHardAction(state: MatchState, side: PlayerSide): Action {
       let bestNetUtility = passUtility;
 
       // 1. Evaluate each `playSupportFromHand` action
+      const partnerCfg = sanitizedState.config.partnerConfig?.[side];
       const seenCardIds = new Set<CardId>();
       for (const action of legalActions) {
         if (action.type !== 'playSupportFromHand') continue;
@@ -534,7 +539,7 @@ export function chooseHardAction(state: MatchState, side: PlayerSide): Action {
         if (cardId === undefined || seenCardIds.has(cardId)) continue;
         seenCardIds.add(cardId);
 
-        const eff = getCardEffect(cardId);
+        const eff = resolveCardEffectDef(cardId, undefined, partnerCfg) ?? getCardEffect(cardId);
         if (eff.ops.length === 0 || (eff.ops.length === 1 && eff.ops[0]?.op === 'none')) {
           continue;
         }

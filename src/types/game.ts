@@ -220,6 +220,8 @@ export interface SupportSlotCard {
   cardId: CardId;
   source: 'hand' | 'deckTop';
   voided?: boolean;
+  /** Original hand index when played from hand (used for pre-reveal open-hand reconstruction). */
+  handIndex?: number;
 }
 
 export interface BattleContext {
@@ -284,6 +286,8 @@ export interface MatchState {
   /** Tracks which sides have completed their mulligan choice during 'mulligan' phase. */
   mulliganDecided?: Record<PlayerSide, boolean>;
   battle: BattleContext | null;
+  /** Snapshot of the most recently resolved clash (for UI Clash Reveal display). */
+  lastBattle?: VisibleBattleContext | null;
   winner: PlayerSide | 'draw' | null;
   winReason?: WinReason;
   events: GameEvent[];
@@ -346,7 +350,6 @@ export type Action =
   | { type: 'placeRookie'; side: PlayerSide; handIndex: number; cardId?: CardId; armorCardId?: CardId }
   | { type: 'addToDp'; side: PlayerSide; handIndex: number; cardId?: CardId }
   | { type: 'digivolve'; side: PlayerSide; handIndex: number; cardId?: CardId }
-  | { type: 'armorDigivolve'; side: PlayerSide; handIndex?: number; cardId?: CardId; armorCardId?: CardId }
   | { type: 'useDigivolveOption'; side: PlayerSide; handIndex: number; cardId?: CardId; targetHandIndex?: number }
   | { type: 'endDigivolvePhase'; side: PlayerSide }
   | { type: 'chooseAttack'; side: PlayerSide; slot: AttackSlot }
@@ -363,7 +366,7 @@ export interface VisiblePlayerState {
   onlineCount: number;
   /** Number of cards in hand. */
   handCount: number;
-  /** Actual hand card IDs (populated for the viewing player, hidden or omitted for opponent). */
+  /** Actual hand card IDs (open / face-up to both players per PS1 DDCB rules). */
   hand: CardId[];
   battleDigimon: ActiveDigimon | null;
   dpSlot: CardId[];
@@ -373,13 +376,20 @@ export interface VisiblePlayerState {
   activeDigivolveModifier?: DigivolveModifier | null;
 }
 
+export interface VisibleSupportSlotCard {
+  /** Card ID if revealed to viewer, or null while set face-down before battle resolution. */
+  cardId: CardId | null;
+  source: 'hand' | 'deckTop';
+  voided?: boolean;
+}
+
 export interface VisibleBattleContext {
   firstAttacker: PlayerSide;
   defender: PlayerSide;
-  /** Chosen attack is hidden for opponent until both sides have selected. */
+  /** Chosen attack stays hidden for opponent until both attack and support selections complete. */
   chosenAttacks: Record<PlayerSide, AttackSlot | 'hidden' | null>;
   effectiveAttacks?: Record<PlayerSide, AttackSlot | null>;
-  supportCards: Record<PlayerSide, SupportSlotCard | null>;
+  supportCards: Record<PlayerSide, VisibleSupportSlotCard | null>;
   supportDecided?: Record<PlayerSide, boolean>;
   computedPowers: Record<PlayerSide, number>;
 }
@@ -392,6 +402,7 @@ export interface VisibleMatchState {
   phase: MatchPhase;
   mulliganDecided?: Record<PlayerSide, boolean>;
   battle: VisibleBattleContext | null;
+  lastBattle?: VisibleBattleContext | null;
   winner: PlayerSide | 'draw' | null;
   winReason?: WinReason;
   events: GameEvent[];

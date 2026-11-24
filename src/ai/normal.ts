@@ -23,6 +23,7 @@ import {
   nextRng,
   otherSide,
   resolveBattle,
+  resolveCardEffectDef,
 } from '../engine';
 import type {
   Action,
@@ -183,9 +184,12 @@ export function computeVisibleStateSeed(
     h = fnvMix(h, 0);
   }
 
-  // Opponent visible state (ONLY counts for hand and online!)
+  // Opponent visible state (open hand is visible; only online ordering is hidden!)
   h = fnvMix(h, oppP.onlineCount);
   h = fnvMix(h, oppP.handCount);
+  for (const cid of oppP.hand) {
+    h = fnvMix(h, cid + 1);
+  }
   h = fnvMix(h, oppP.dpTotal);
   for (const cid of oppP.dpSlot) {
     h = fnvMix(h, cid + 1);
@@ -272,7 +276,7 @@ export function inferPlayerSpecialty(
     Rare: 0,
   };
   const inspectIds = [
-    ...(targetSide === visible.viewer ? p.hand : []),
+    ...p.hand,
     ...p.dpSlot,
     ...p.offline,
   ];
@@ -405,12 +409,8 @@ export function createSanitizedAiContext(
     oppVis.onlineCount,
     (seed ^ 0x2468ace0) >>> 0,
   );
-  const oppHand = buildDeterminizedCardList(
-    visible,
-    oppSide,
-    oppVis.handCount,
-    (seed ^ 0xdeadbeef) >>> 0,
-  );
+  // Hands are open (face-up) to both players in PS1 DDCB
+  const oppHand = [...oppVis.hand];
 
   const sanitizedState: MatchState = {
     players: {
@@ -506,11 +506,21 @@ export function createSanitizedAiContext(
           supportCards: {
             player:
               side === 'player' && visible.battle.supportCards.player
-                ? { ...visible.battle.supportCards.player }
+                ? {
+                    cardId:
+                      visible.battle.supportCards.player.cardId ?? selfOnline[0] ?? 0,
+                    source: visible.battle.supportCards.player.source,
+                    ...(visible.battle.supportCards.player.voided ? { voided: true } : {}),
+                  }
                 : null,
             opponent:
               side === 'opponent' && visible.battle.supportCards.opponent
-                ? { ...visible.battle.supportCards.opponent }
+                ? {
+                    cardId:
+                      visible.battle.supportCards.opponent.cardId ?? selfOnline[0] ?? 0,
+                    source: visible.battle.supportCards.opponent.source,
+                    ...(visible.battle.supportCards.opponent.voided ? { voided: true } : {}),
+                  }
                 : null,
           },
           supportDecided: visible.battle.supportDecided
@@ -562,7 +572,9 @@ export function estimateOpponentAttackDistribution(
   if (!oppDigimon) {
     return { circle: 0.45, triangle: 0.35, x: 0.2 };
   }
-  const oppCard = getCardById(oppDigimon.cardId);
+  const oppCard =
+    getEffectiveCardData(oppDigimon.cardId, sanitizedState.config.partnerConfig?.[oppSide]) ??
+    getCardById(oppDigimon.cardId);
   if (!oppCard?.attacks) {
     return { circle: 0.45, triangle: 0.35, x: 0.2 };
   }
@@ -570,16 +582,23 @@ export function estimateOpponentAttackDistribution(
   const turnStarter = sanitizedState.battle?.firstAttacker ?? getTurnStarter(sanitizedState);
   const oppIsFirst = turnStarter === oppSide;
 
-  let wCircle = Math.max(80, oppCard.attacks.circle.power);
-  let wTriangle = Math.max(80, oppCard.attacks.triangle.power);
-  let wX = Math.max(60, oppCard.attacks.x.power);
+  const divisor = oppDigimon.statPenaltyDivisor;
+  const effPower = (raw: number): number =>
+    divisor && divisor > 1 ? applyNumericMode(raw, 'divide', divisor, 'attackPower') : raw;
+  const cPow = effPower(oppCard.attacks.circle.power);
+  const tPow = effPower(oppCard.attacks.triangle.power);
+  const xPow = effPower(oppCard.attacks.x.power);
+
+  let wCircle = Math.max(80, cPow);
+  let wTriangle = Math.max(80, tPow);
+  let wX = Math.max(60, xPow);
 
   const xEff = oppCard.attacks.x.effect;
   if (xEff && myDigimon) {
     switch (xEff.type) {
       case 'foeX3':
         if (xEff.specialty === myDigimon.effectiveSpecialty) {
-          wX = Math.max(wX, oppCard.attacks.x.power * 3 * 1.25);
+          wX = Math.max(wX, xPow * 3 * 1.25);
         }
         break;
       case 'counter':
@@ -587,7 +606,7 @@ export function estimateOpponentAttackDistribution(
         if (!oppIsFirst && oppDigimon.currentHp > 300) {
           wX += 380;
         } else if (oppIsFirst) {
-          wX = Math.max(30, oppCard.attacks.x.power * 0.5);
+          wX = Math.max(30, xPow * 0.5);
         }
         break;
       case 'zero':
@@ -658,6 +677,9 @@ export function simulateSingleBattleUtility(
           currentHp: p.battleDigimon.currentHp,
           maxHp: p.battleDigimon.maxHp,
           effectiveSpecialty: p.battleDigimon.effectiveSpecialty,
+          ...(p.battleDigimon.statPenaltyDivisor
+            ? { statPenaltyDivisor: p.battleDigimon.statPenaltyDivisor }
+            : {}),
         }
       : null,
     dpSlot: [...p.dpSlot],
@@ -825,9 +847,10 @@ export function computeSupportCardOpportunityCost(
   handIndex: number,
 ): number {
   const player = sanitizedState.players[side];
+  const partnerCfg = sanitizedState.config.partnerConfig?.[side];
   const cardId = player.hand[handIndex];
   if (cardId === undefined) return 80;
-  const card = getCardById(cardId);
+  const card = getEffectiveCardData(cardId, partnerCfg) ?? getCardById(cardId);
   if (!card) return 80;
 
   // Base threshold so we don't waste cards when outcome is unchanged
@@ -842,7 +865,9 @@ export function computeSupportCardOpportunityCost(
 
   if (card.kind === 'Digimon') {
     const active = player.battleDigimon;
-    const activeCard = active ? getCardById(active.cardId) : undefined;
+    const activeCard = active
+      ? (getEffectiveCardData(active.cardId, partnerCfg) ?? getCardById(active.cardId))
+      : undefined;
 
     // Check if this card is a direct evolution target for our active Digimon
     if (active && activeCard) {
@@ -1121,11 +1146,14 @@ function scoreAddToDpAction(
   handIndex: number,
 ): number {
   const player = sanitizedState.players[side];
+  const partnerCfg = sanitizedState.config.partnerConfig?.[side];
   const active = player.battleDigimon;
-  const activeCard = active ? getCardById(active.cardId) : undefined;
+  const activeCard = active
+    ? (getEffectiveCardData(active.cardId, partnerCfg) ?? getCardById(active.cardId))
+    : undefined;
   const cardId = player.hand[handIndex];
   if (cardId === undefined) return -9999;
-  const card = getCardById(cardId);
+  const card = getEffectiveCardData(cardId, partnerCfg) ?? getCardById(cardId);
   if (!card || card.kind !== 'Digimon' || card.level === 'A') return -9999;
 
   // If our Active Digimon is already an Ultimate and we don't need DP, avoid wasting cards
@@ -1242,8 +1270,11 @@ export function chooseNormalAction(state: MatchState, side: PlayerSide): Action 
     }
 
     case 'digivolve': {
+      const partnerCfg = sanitizedState.config.partnerConfig?.[side];
       const active = player.battleDigimon;
-      const activeCard = active ? getCardById(active.cardId) : undefined;
+      const activeCard = active
+        ? (getEffectiveCardData(active.cardId, partnerCfg) ?? getCardById(active.cardId))
+        : undefined;
 
       // 1. Normal / Option-modified Digivolve (do BEFORE addToDp so existing DP is used before banking new DP!)
       const digiActions = legalActions.filter(
@@ -1253,7 +1284,9 @@ export function chooseNormalAction(state: MatchState, side: PlayerSide): Action 
         let bestDigi: Action | null = null;
         let bestDigiScore = -Infinity;
         for (const act of digiActions) {
-          const toCard = getCardById(player.hand[act.handIndex]!);
+          const toCard =
+            getEffectiveCardData(player.hand[act.handIndex]!, partnerCfg) ??
+            getCardById(player.hand[act.handIndex]!);
           if (!toCard) continue;
           const fromRank = getLevelRank(activeCard.level);
           const toRank = getLevelRank(toCard.level);
@@ -1353,12 +1386,13 @@ export function chooseNormalAction(state: MatchState, side: PlayerSide): Action 
       let bestNetScore = passScore;
 
       // Evaluate each playable hand card
+      const partnerCfg = sanitizedState.config.partnerConfig?.[side];
       for (const action of legalActions) {
         if (action.type !== 'playSupportFromHand') continue;
         const cardId = player.hand[action.handIndex];
         if (cardId === undefined) continue;
         // Skip cards whose support effect is 'none'
-        const eff = getCardEffect(cardId);
+        const eff = resolveCardEffectDef(cardId, undefined, partnerCfg) ?? getCardEffect(cardId);
         if (eff.ops.length === 0 || (eff.ops.length === 1 && eff.ops[0]?.op === 'none')) {
           continue;
         }

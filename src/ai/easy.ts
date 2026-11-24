@@ -11,6 +11,7 @@
  */
 
 import { getCardById } from '../data/cards';
+import { getEffectiveCardData } from '../data/digiParts';
 import { isRookieCard, nextRng, pickWeightedIndex } from '../engine';
 import type { Action, MatchState, PlayerSide } from '../types/game';
 import { createSanitizedAiContext } from './normal';
@@ -60,10 +61,8 @@ export function chooseEasyAction(state: MatchState, side: PlayerSide): Action {
     }
 
     case 'digivolve': {
-      // If Armor Digivolve or normal Digivolve is immediately available, take it ~55% of the time
-      const immediateDigivolve = legalActions.filter(
-        (a) => a.type === 'armorDigivolve' || a.type === 'digivolve',
-      );
+      // If a normal Digivolve is immediately available, take it ~55% of the time
+      const immediateDigivolve = legalActions.filter((a) => a.type === 'digivolve');
       if (immediateDigivolve.length > 0 && roll() < 0.55) {
         const idx = Math.floor(roll() * immediateDigivolve.length);
         return immediateDigivolve[idx]!;
@@ -90,7 +89,10 @@ export function chooseEasyAction(state: MatchState, side: PlayerSide): Action {
     case 'attackSelect': {
       // Weight attacks mostly by base power + random variance, ignoring XEffect subtleties
       const active = player.battleDigimon;
-      const card = active ? getCardById(active.cardId) : undefined;
+      const card = active
+        ? (getEffectiveCardData(active.cardId, sanitizedState.config.partnerConfig?.[side]) ??
+          getCardById(active.cardId))
+        : undefined;
       const atkActions = legalActions.filter(
         (a): a is Extract<Action, { type: 'chooseAttack' }> => a.type === 'chooseAttack',
       );

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { getCardByName } from '../../data/cards';
 import { OPPONENTS, STARTER_DECKS } from '../../data/opponents';
-import { applyAction, cloneMatchState, createMatch, getLegalActions } from '../../engine';
+import { applyAction, cloneMatchState, createMatch, getLegalActions, getVisibleState } from '../../engine';
 import type { Action, MatchPhase, MatchState, PlayerSide } from '../../types/game';
 import { type AiDifficulty, chooseAiAction } from '../index';
 
@@ -79,7 +79,7 @@ describe('AI Engine (Easy, Normal, Hard)', () => {
   });
 
   describe('2. Strict Information Hiding (Fair AI — Never Cheats)', () => {
-    it('makes identical decisions when online deck order or opponent hidden hand cards change', () => {
+    it('makes identical decisions when online deck order or unrevealed attack/support selections change, while seeing open hands', () => {
       const difficulties: AiDifficulty[] = ['easy', 'normal', 'hard'];
       let state = createMatch({
         playerDeck: deckA,
@@ -105,10 +105,20 @@ describe('AI Engine (Easy, Normal, Hard)', () => {
               : 'player';
         const oppSide: PlayerSide = side === 'player' ? 'opponent' : 'player';
 
+        // PS1 Open Hand invariant: getVisibleState exposes opponent's open hand (and reconstructs unrevealed Support-from-hand)
+        const vis = getVisibleState(state, side);
+        if (state.phase === 'supportSelect' && vis.battle?.supportCards[oppSide]?.cardId === null) {
+          expect(vis.players[oppSide].hand.length).toBeGreaterThanOrEqual(
+            state.players[oppSide].hand.length
+          );
+        } else {
+          expect(vis.players[oppSide].hand).toEqual(state.players[oppSide].hand);
+        }
+
         for (const diff of difficulties) {
           const baseDecision = chooseAiAction(state, side, diff);
 
-          // Mutation A: Reverse and permute both players' online decks (keeping length identical)
+          // Mutation A: Reverse and permute both players' hidden online decks (keeping length identical)
           const mutatedOnline = cloneMatchState(state);
           mutatedOnline.players[side].online = [...mutatedOnline.players[side].online].reverse();
           mutatedOnline.players[oppSide].online = [
@@ -117,15 +127,7 @@ describe('AI Engine (Easy, Normal, Hard)', () => {
           const onlineDecision = chooseAiAction(mutatedOnline, side, diff);
           expect(onlineDecision).toEqual(baseDecision);
 
-          // Mutation B: Replace opponent's hidden hand with completely different card IDs (same length)
-          const mutatedOppHand = cloneMatchState(state);
-          mutatedOppHand.players[oppSide].hand = mutatedOppHand.players[oppSide].hand.map(
-            (_, idx) => (idx * 37 + 15) % 250,
-          );
-          const oppHandDecision = chooseAiAction(mutatedOppHand, side, diff);
-          expect(oppHandDecision).toEqual(baseDecision);
-
-          // Mutation C: If in attackSelect or supportSelect, mutate opponent's hidden attack/support
+          // Mutation B: If in attackSelect or unrevealed supportSelect, mutate opponent's hidden attack/support
           if (state.phase === 'attackSelect' || state.phase === 'supportSelect') {
             const mutatedBattle = cloneMatchState(state);
             if (mutatedBattle.battle) {
@@ -134,10 +136,18 @@ describe('AI Engine (Easy, Normal, Hard)', () => {
               } else {
                 mutatedBattle.battle.chosenAttacks[oppSide] =
                   mutatedBattle.battle.chosenAttacks[oppSide] === 'circle' ? 'triangle' : 'circle';
-                mutatedBattle.battle.supportCards[oppSide] = {
-                  cardId: 200,
-                  source: 'hand',
-                };
+                if (mutatedBattle.battle.effectiveAttacks) {
+                  mutatedBattle.battle.effectiveAttacks[oppSide] =
+                    mutatedBattle.battle.chosenAttacks[oppSide];
+                }
+                if (mutatedBattle.battle.supportDecided?.[oppSide]) {
+                  if (mutatedBattle.battle.supportCards[oppSide]) {
+                    mutatedBattle.battle.supportCards[oppSide] = {
+                      ...mutatedBattle.battle.supportCards[oppSide]!,
+                      cardId: 200,
+                    };
+                  }
+                }
               }
             }
             const battleDecision = chooseAiAction(mutatedBattle, side, diff);

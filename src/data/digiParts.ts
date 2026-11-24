@@ -95,7 +95,7 @@ export const ALL_DIGI_PARTS: readonly DigiPartDef[] = [
       tag: '[HP+]',
       category: 'hp',
       name: `HP +${hpAdd}`,
-      description: `Increases Partner HP (and Armor HP) by +${hpAdd}.`,
+      description: `Increases Partner HP by +${hpAdd}.`,
       hpAdd,
     }),
   ),
@@ -922,8 +922,8 @@ const clampHp = (v: number): number => Math.max(10, Math.min(9990, v));
 const clampAtk = (v: number): number => Math.max(0, Math.min(9990, v));
 
 /**
- * Returns `CardData` for `cardId` with any equipped Digi-Parts applied for a Partner ('R P')
- * or its associated Armor ('A') evolution.
+ * Returns `CardData` for `cardId` with any equipped Digi-Parts applied for a Partner Rookie ('R P').
+ * Armor Digivolutions ('A') keep their fixed printed stats per PS1 DDCB rules.
  */
 export function getEffectiveCardData(
   cardId: CardId,
@@ -932,15 +932,8 @@ export function getEffectiveCardData(
   const base = getCardById(cardId);
   if (!base) return undefined;
 
-  const partnerId =
-    base.level === 'R P'
-      ? base.id
-      : base.level === 'A'
-        ? ARMOR_TO_PARTNER_ID[base.id]
-        : undefined;
-
-  if (partnerId === undefined || !partnerConfigs) return base;
-  const custom = partnerConfigs[partnerId];
+  if (base.level !== 'R P' || !partnerConfigs) return base;
+  const custom = partnerConfigs[base.id];
   if (!custom || custom.equippedParts.length === 0) return base;
 
   const cloned: CardData = {

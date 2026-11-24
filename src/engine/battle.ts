@@ -115,13 +115,13 @@ export function computeActiveAbilities(
   for (const side of ['player', 'opponent'] as const) {
     const oppSide = otherSide(side);
     if (hasJamming[oppSide]) {
-      // Opponent's Jamming nullifies this side's xEffect abilities for this battle
+      // Opponent's Jamming nullifies printed X-Attack abilities, while Support-granted abilities stay active
       const digimon = state.players[side].battleDigimon;
-      if (digimon) {
+      if (digimon && printedBySide[side].length > 0) {
         digimon.tempModifiers = digimon.tempModifiers ?? {};
         digimon.tempModifiers.jammed = true;
       }
-      result[side] = [];
+      result[side] = [...grantedBySide[side]];
     } else {
       result[side] = [...printedBySide[side], ...grantedBySide[side]];
     }
@@ -419,6 +419,36 @@ export function resolveBattle(state: MatchState, effectRegistry?: EffectRegistry
   // -------------------------------------------------------------------------
   // Step 7: Post-Battle Cleanup, KO Points, reviveOnKo & Win Check
   // -------------------------------------------------------------------------
+  state.lastBattle = {
+    firstAttacker: state.battle.firstAttacker,
+    defender: state.battle.defender,
+    chosenAttacks: {
+      player: state.battle.chosenAttacks.player,
+      opponent: state.battle.chosenAttacks.opponent,
+    },
+    effectiveAttacks: state.battle.effectiveAttacks
+      ? { ...state.battle.effectiveAttacks }
+      : undefined,
+    supportCards: {
+      player: state.battle.supportCards.player
+        ? {
+            cardId: state.battle.supportCards.player.cardId,
+            source: state.battle.supportCards.player.source,
+            ...(state.battle.supportCards.player.voided ? { voided: true } : {}),
+          }
+        : null,
+      opponent: state.battle.supportCards.opponent
+        ? {
+            cardId: state.battle.supportCards.opponent.cardId,
+            source: state.battle.supportCards.opponent.source,
+            ...(state.battle.supportCards.opponent.voided ? { voided: true } : {}),
+          }
+        : null,
+    },
+    supportDecided: { player: true, opponent: true },
+    computedPowers: { ...state.battle.computedPowers },
+  };
+
   // 7.1: Move Support cards to offline pile
   for (const side of playerOrder) {
     const sup = state.battle.supportCards[side];

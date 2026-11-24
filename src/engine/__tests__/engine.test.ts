@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { getCardById } from '../../data/cards';
-import { ALL_DIGI_PARTS, getEffectiveCardData } from '../../data/digiParts';
+import {
+  ALL_DIGI_PARTS,
+  ARMOR_TO_PARTNER_ID,
+  getEffectiveCardData,
+} from '../../data/digiParts';
+import { OPPONENTS } from '../../data/opponents';
+import { simulateSingleBattleUtility } from '../../ai/normal';
 import {
   createDefaultDeckStoreState,
   equipDigiPartToPartner,
@@ -378,7 +384,9 @@ describe('Core Battle Engine (DDCB PS1)', () => {
       afterNormalPlace.phase = 'digivolve';
       afterNormalPlace.activePlayer = 'player';
       const digiActions = getLegalActions(afterNormalPlace, 'player');
-      expect(digiActions.some((a) => a.type === 'armorDigivolve')).toBe(false);
+      expect(
+        digiActions.some((a) => a.type === 'digivolve' && getCardById(a.cardId!)?.level === 'A')
+      ).toBe(false);
       expect(digiActions.some((a) => a.type === 'digivolve' && a.handIndex === 0)).toBe(true);
 
       afterNormalPlace = applyAction(afterNormalPlace, {
@@ -1057,10 +1065,10 @@ describe('Core Battle Engine (DDCB PS1)', () => {
   });
 
   // -------------------------------------------------------------------------
-  // 8. Information Hiding (`getVisibleState`)
+  // 8. Information Hiding & Open Hands (`getVisibleState`)
   // -------------------------------------------------------------------------
   describe('Information Hiding (getVisibleState)', () => {
-    it('41. hides opponent hand card IDs and unrevealed chosen attack while preserving counts', () => {
+    it('41. shows open hands face-up while keeping chosen attacks and support secret until both finish Support selection', () => {
       let state = createBattleReadyState({
         playerCardId: 27,
         opponentCardId: 62,
@@ -1074,17 +1082,33 @@ describe('Core Battle Engine (DDCB PS1)', () => {
       const visibleToPlayer = getVisibleState(state, 'player');
       expect(visibleToPlayer.players.player.hand).toEqual([27, 14, 264]);
       expect(visibleToPlayer.players.player.handCount).toBe(3);
-      // Opponent's hand array is empty (hidden), but handCount is 4
-      expect(visibleToPlayer.players.opponent.hand).toEqual([]);
+      // Both players' 4-card hands are open face-up per PS1 DDCB rules
+      expect(visibleToPlayer.players.opponent.hand).toEqual([62, 46, 266, 264]);
       expect(visibleToPlayer.players.opponent.handCount).toBe(4);
-      // Opponent's chosen attack is masked as 'hidden' until player also selects
+      // Opponent's chosen attack & powers remain hidden and attackChosen events filtered until clash reveal
       expect(visibleToPlayer.battle?.chosenAttacks.opponent).toBe('hidden');
+      expect(visibleToPlayer.battle?.effectiveAttacks?.opponent).toBeNull();
+      expect(visibleToPlayer.battle?.computedPowers.opponent).toBe(0);
+      expect(
+        visibleToPlayer.events.some((e) => e.type === 'attackChosen' && e.side === 'opponent')
+      ).toBe(false);
 
-      // Once player also selects an attack, both chosenAttacks are revealed
+      // Even after player chooses an attack (entering supportSelect), opponent's attack stays hidden until Support finishes
       state = applyAction(state, { type: 'chooseAttack', side: 'player', slot: 'circle' });
-      const visibleAfter = getVisibleState(state, 'player');
-      expect(visibleAfter.battle?.chosenAttacks.player).toBe('circle');
-      expect(visibleAfter.battle?.chosenAttacks.opponent).toBe('x');
+      expect(state.phase).toBe('supportSelect');
+      const visibleDuringSupport = getVisibleState(state, 'player');
+      expect(visibleDuringSupport.battle?.chosenAttacks.player).toBe('circle');
+      expect(visibleDuringSupport.battle?.chosenAttacks.opponent).toBe('hidden');
+      expect(visibleDuringSupport.battle?.effectiveAttacks?.opponent).toBeNull();
+      expect(visibleDuringSupport.battle?.computedPowers.opponent).toBe(0);
+
+      // Once both sides decide Support, battle resolves and lastBattle reveals both chosen attacks & support
+      state = applyAction(state, { type: 'passSupport', side: 'player' });
+      state = applyAction(state, { type: 'passSupport', side: 'opponent' });
+      const visibleAfterReveal = getVisibleState(state, 'player');
+      expect(visibleAfterReveal.lastBattle?.chosenAttacks.player).toBe('circle');
+      expect(visibleAfterReveal.lastBattle?.chosenAttacks.opponent).toBe('x');
+      expect(visibleAfterReveal.lastBattle?.computedPowers.opponent).toBeGreaterThan(0);
     });
   });
 
@@ -1211,7 +1235,7 @@ describe('Core Battle Engine (DDCB PS1)', () => {
       expect(downloadEvo.players.player.battleDigimon!.currentHp).toBe(metalGreymon.hp);
     });
 
-    it('44. supports 128 Digi-Parts, max 3 equipped per Partner, Partner stat/Armor carryover, and selectedArmorCardId restriction', () => {
+    it('44. supports 128 Digi-Parts, max 3 equipped on Partner Rookie only (fixed Armor stats), and selectedArmorCardId restriction', () => {
       expect(ALL_DIGI_PARTS).toHaveLength(128);
       const baseVeemon = getCardById(175)!;
       const baseMagnamon = getCardById(173)!;
@@ -1235,10 +1259,10 @@ describe('Core Battle Engine (DDCB PS1)', () => {
       expect(effVeemon.attacks!.circle.power).toBe(baseVeemon.attacks!.circle.power + 100);
       expect(effVeemon.plusP).toBe(baseVeemon.plusP + 20);
 
-      // Stats carry over into Magnamon (#173)
+      // Armor evolutions (#173 Magnamon, Level A) keep fixed printed stats per PS1 rules
       const effMagnamon = getEffectiveCardData(173, store.partnerConfigs)!;
-      expect(effMagnamon.hp).toBe(baseMagnamon.hp + 200);
-      expect(effMagnamon.attacks!.circle.power).toBe(baseMagnamon.attacks!.circle.power + 100);
+      expect(effMagnamon.hp).toBe(baseMagnamon.hp);
+      expect(effMagnamon.attacks!.circle.power).toBe(baseMagnamon.attacks!.circle.power);
 
       // In rookiePlacement, legal Armor action for Veemon is restricted to #173 Magnamon
       const match = createMatch({
@@ -1261,7 +1285,7 @@ describe('Core Battle Engine (DDCB PS1)', () => {
       expect(veemonArmorChoices).toHaveLength(1);
       expect(veemonArmorChoices[0]!.armorCardId).toBe(173);
 
-      // Deploying non-selected #172 throws while #173 deploys with boosted HP & Circle power
+      // Deploying non-selected #172 throws while #173 deploys with fixed printed Magnamon stats
       expect(() =>
         applyAction(match, {
           type: 'placeRookie',
@@ -1278,9 +1302,21 @@ describe('Core Battle Engine (DDCB PS1)', () => {
         armorCardId: 173,
       });
       expect(deployed.players.player.battleDigimon!.cardId).toBe(173);
-      expect(deployed.players.player.battleDigimon!.currentHp).toBe(baseMagnamon.hp + 200);
+      expect(deployed.players.player.battleDigimon!.currentHp).toBe(baseMagnamon.hp);
       expect(getActiveDigimonSlotPowers(deployed, 'player').circle).toBe(
-        baseMagnamon.attacks!.circle.power + 100
+        baseMagnamon.attacks!.circle.power
+      );
+
+      // Verify Normal Rookie deployment applies equipped Digi-Part stats on #175 Veemon
+      const deployedRookie = applyAction(match, {
+        type: 'placeRookie',
+        side: 'player',
+        handIndex: 0,
+      });
+      expect(deployedRookie.players.player.battleDigimon!.cardId).toBe(175);
+      expect(deployedRookie.players.player.battleDigimon!.currentHp).toBe(baseVeemon.hp + 200);
+      expect(getActiveDigimonSlotPowers(deployedRookie, 'player').circle).toBe(
+        baseVeemon.attacks!.circle.power + 100
       );
 
       // Also verify [Sup Effect] Digi-Part (#043 Boost Attack +200) and [Effect] Digi-Part (#035 1st Attack, X -100)
@@ -1307,6 +1343,124 @@ describe('Core Battle Engine (DDCB PS1)', () => {
       expect(resolved.players.opponent.battleDigimon!.currentHp).toBe(
         Math.max(0, gabumonHp - (agumonCircle + 200))
       );
+    });
+
+    it('45. binds opponent armorCardId via partnerConfig.opponent to its canonical Armor form', () => {
+      const armorOpp = OPPONENTS.find((o) => o.armorCardId !== undefined);
+      expect(armorOpp).toBeDefined();
+      const targetArmorId = armorOpp!.armorCardId!;
+      const partnerId = ARMOR_TO_PARTNER_ID[targetArmorId]!;
+      expect(partnerId).toBeDefined();
+
+      const match = createMatch({
+        playerDeck: buildTestDeck(),
+        opponentDeck: armorOpp!.cards,
+        seed: 8080,
+        firstPlayer: 'opponent',
+        config: {
+          enableMulligan: false,
+          partnerConfig: {
+            opponent: {
+              [partnerId]: {
+                equippedParts: [],
+                selectedArmorCardId: targetArmorId,
+              },
+            },
+          },
+        },
+      });
+      match.players.opponent.battleDigimon = null;
+      match.players.opponent.hand = [partnerId, 27];
+      match.phase = 'rookiePlacement';
+      match.activePlayer = 'opponent';
+
+      const oppArmorChoices = getLegalActions(match, 'opponent').filter(
+        (a): a is Extract<Action, { type: 'placeRookie' }> =>
+          a.type === 'placeRookie' && a.handIndex === 0 && a.armorCardId !== undefined
+      );
+      expect(oppArmorChoices).toHaveLength(1);
+      expect(oppArmorChoices[0]!.armorCardId).toBe(targetArmorId);
+    });
+
+    it('46. AI simulateSingleBattleUtility preserves direct C/U statPenaltyDivisor scaling', () => {
+      const baseState = createMatch({
+        playerDeck: buildTestDeck(),
+        opponentDeck: buildTestDeck(),
+        seed: 9090,
+        firstPlayer: 'player',
+        config: { enableMulligan: false },
+      });
+      baseState.players.player.battleDigimon = null;
+      baseState.players.player.hand = [9, 27]; // #009 MetalGreymon (U)
+      const placedU = applyAction(baseState, { type: 'placeRookie', side: 'player', handIndex: 0 });
+      expect(placedU.players.player.battleDigimon!.statPenaltyDivisor).toBe(4);
+
+      placedU.phase = 'supportSelect';
+      placedU.activePlayer = 'player';
+      placedU.players.opponent.battleDigimon = {
+        cardId: 27, // #027 Agumon
+        stack: [],
+        currentHp: 500,
+        maxHp: 500,
+        effectiveSpecialty: 'Fire',
+      };
+      placedU.battle = {
+        firstAttacker: 'player',
+        defender: 'opponent',
+        chosenAttacks: { player: 'circle', opponent: 'circle' },
+        effectiveAttacks: { player: 'circle', opponent: 'circle' },
+        supportCards: { player: null, opponent: null },
+        supportDecided: { player: false, opponent: false },
+        computedPowers: { player: 0, opponent: 0 },
+      };
+
+      const penalizedScore = simulateSingleBattleUtility(
+        placedU,
+        'player',
+        'circle',
+        'circle',
+        { kind: 'pass' },
+        null
+      );
+
+      const unpenalized = structuredClone(placedU);
+      delete unpenalized.players.player.battleDigimon!.statPenaltyDivisor;
+      const fullPowerScore = simulateSingleBattleUtility(
+        unpenalized,
+        'player',
+        'circle',
+        'circle',
+        { kind: 'pass' },
+        null
+      );
+
+      expect(penalizedScore).toBeLessThan(fullPowerScore);
+    });
+
+    it('47. Jamming disables printed xEffect abilities while keeping Support-granted abilities (Golden Banana Counter) active', () => {
+      let state = createBattleReadyState({
+        playerCardId: 43, // #043 WaruSeadramon (U, Ice, x: Jamming 200)
+        opponentCardId: 3, // #003 Phoenixmon (U, Fire, x: Eat-Up HP 200, hp: 1320)
+        playerHand: [27],
+        opponentHand: [191], // #191 Golden Banana (HP/2, Counter any, Attack second)
+        activePlayer: 'player',
+      });
+
+      state = applyAction(state, { type: 'chooseAttack', side: 'player', slot: 'x' });
+      state = applyAction(state, { type: 'chooseAttack', side: 'opponent', slot: 'x' });
+      state = applyAction(state, { type: 'playSupportFromHand', side: 'opponent', handIndex: 0 });
+      state = applyAction(state, { type: 'passSupport', side: 'player' });
+
+      // Golden Banana halved Phoenixmon HP (1320 -> 660), WaruSeadramon struck for 200 (660 -> 460),
+      // Golden Banana Counter reflected (2 * 200 + 200 = 600) back onto WaruSeadramon (1760 -> 1160),
+      // while WaruSeadramon's Jamming blocked Phoenixmon's printed Eat-Up HP so Phoenixmon did NOT heal from 460 HP.
+      expect(state.players.player.battleDigimon!.currentHp).toBe(1160);
+      expect(state.players.opponent.battleDigimon!.currentHp).toBe(460);
+      const counterStrike = state.events.find(
+        (e) => e.type === 'attackStrike' && e.attacker === 'opponent'
+      );
+      expect(counterStrike?.type === 'attackStrike' && counterStrike.countered).toBe(true);
+      expect(counterStrike?.type === 'attackStrike' ? counterStrike.eatUpHpHealed : undefined).toBeUndefined();
     });
   });
 });

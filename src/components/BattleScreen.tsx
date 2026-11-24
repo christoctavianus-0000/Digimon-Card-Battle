@@ -25,15 +25,16 @@ import type {
   MatchState,
   PartnerConfigMap,
   PlayerSide,
+  VisibleBattleContext,
 } from '../types/game';
 import { getCardById } from '../data/cards';
-import { getEffectiveCardData } from '../data/digiParts';
+import { ARMOR_TO_PARTNER_ID, getEffectiveCardData } from '../data/digiParts';
+import { CardDetailModal } from './CardDetailModal';
 import {
   ActiveDigimonBattleSlot,
   AttackSymbolSvg,
   BattleLogDrawer,
   CardArtwork,
-  CardDetailModal,
   CenterClashZone,
   ClashStepBanner,
   ForfeitConfirmModal,
@@ -52,6 +53,7 @@ export interface BattleScreenProps {
   opponentName: string;
   opponentDeckName?: string;
   opponentAvatarCardId?: CardId;
+  opponentArmorCardId?: CardId;
   opponentPreserveExactOrder?: boolean;
   opponentDisableArmorOnCardIds?: CardId[];
   playerPartnerConfig?: PartnerConfigMap;
@@ -79,12 +81,44 @@ const PHASE_DISPLAY_NAMES: Record<MatchPhase, string> = {
   gameOver: 'Game Over',
 };
 
+function describeRevealSupport(
+  sup: VisibleBattleContext['supportCards']['player'],
+  partnerCfg?: PartnerConfigMap
+): string {
+  if (!sup || sup.cardId === null) return 'Pass';
+  const c = getEffectiveCardData(sup.cardId, partnerCfg) ?? getCardById(sup.cardId);
+  return c ? `#${c.no} ${c.name}` : `Card #${sup.cardId}`;
+}
+
 function buildClashBannersFromEvents(
   events: GameEvent[],
-  opponentName: string
+  opponentName: string,
+  revealedBattle?: VisibleBattleContext | null,
+  playerPartnerConfig?: PartnerConfigMap,
+  opponentPartnerConfig?: PartnerConfigMap
 ): ClashStepBanner[] {
   const banners: ClashStepBanner[] = [];
   const actorName = (side: PlayerSide) => (side === 'player' ? 'You' : opponentName);
+
+  if (revealedBattle) {
+    const pSlot = (
+      revealedBattle.chosenAttacks.player === 'hidden'
+        ? 'circle'
+        : revealedBattle.chosenAttacks.player ?? 'circle'
+    ).toUpperCase();
+    const oSlot = (
+      revealedBattle.chosenAttacks.opponent === 'hidden'
+        ? 'circle'
+        : revealedBattle.chosenAttacks.opponent ?? 'circle'
+    ).toUpperCase();
+    const pSup = describeRevealSupport(revealedBattle.supportCards.player, playerPartnerConfig);
+    const oSup = describeRevealSupport(revealedBattle.supportCards.opponent, opponentPartnerConfig);
+    banners.push({
+      title: '⚔️ BATTLE CLASH REVEAL',
+      detail: `You: [${pSlot}] + ${pSup}  vs  ${opponentName}: [${oSlot}] + ${oSup}`,
+      tone: 'info',
+    });
+  }
 
   for (const ev of events) {
     if (ev.type === 'supportVoided') {
@@ -146,6 +180,7 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
   opponentName,
   opponentDeckName,
   opponentAvatarCardId,
+  opponentArmorCardId,
   opponentPreserveExactOrder,
   opponentDisableArmorOnCardIds,
   playerPartnerConfig,
@@ -154,41 +189,64 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
   chooseAiAction,
   onExit,
 }) => {
-  const matchRulesConfig = useMemo(
-    () => ({
+  const opponentPartnerConfig = useMemo<PartnerConfigMap | undefined>(() => {
+    if (opponentArmorCardId === undefined) return undefined;
+    const partnerId = ARMOR_TO_PARTNER_ID[opponentArmorCardId];
+    if (partnerId === undefined) return undefined;
+    return {
+      [partnerId]: {
+        equippedParts: [],
+        selectedArmorCardId: opponentArmorCardId,
+      },
+    };
+  }, [opponentArmorCardId]);
+
+  const matchRulesConfig = useMemo(() => {
+    const mergedPartners =
+      playerPartnerConfig || opponentPartnerConfig
+        ? {
+            ...(playerPartnerConfig ? { player: playerPartnerConfig } : {}),
+            ...(opponentPartnerConfig ? { opponent: opponentPartnerConfig } : {}),
+          }
+        : undefined;
+    return {
       ...(opponentPreserveExactOrder ? { preserveDeckOrder: { opponent: true } } : {}),
       ...(opponentDisableArmorOnCardIds && opponentDisableArmorOnCardIds.length > 0
         ? { disableArmorOnCardIds: { opponent: opponentDisableArmorOnCardIds } }
         : {}),
-      ...(playerPartnerConfig ? { partnerConfig: { player: playerPartnerConfig } } : {}),
-    }),
-    [opponentPreserveExactOrder, opponentDisableArmorOnCardIds, playerPartnerConfig]
-  );
+      ...(mergedPartners ? { partnerConfig: mergedPartners } : {}),
+    };
+  }, [
+    opponentPreserveExactOrder,
+    opponentDisableArmorOnCardIds,
+    playerPartnerConfig,
+    opponentPartnerConfig,
+  ]);
 
   // Initialize match state
   const [matchState, setMatchState] = useState<MatchState>(() =>
     engine.createMatch({
       playerDeck,
       opponentDeck,
-      config: {
-        ...(opponentPreserveExactOrder ? { preserveDeckOrder: { opponent: true } } : {}),
-        ...(opponentDisableArmorOnCardIds && opponentDisableArmorOnCardIds.length > 0
-          ? { disableArmorOnCardIds: { opponent: opponentDisableArmorOnCardIds } }
-          : {}),
-        ...(playerPartnerConfig ? { partnerConfig: { player: playerPartnerConfig } } : {}),
-      },
+      config: matchRulesConfig,
     })
   );
+  const matchStateRef = useRef<MatchState>(matchState);
+  matchStateRef.current = matchState;
 
   // Speed toggle ('1x' | '2x' | 'instant')
   const [speedMode, setSpeedMode] = useState<SpeedMode>('1x');
 
   // UI Modals & Drawers
-  const [inspectedCardId, setInspectedCardId] = useState<CardId | null>(null);
+  const [inspectedCard, setInspectedCard] = useState<{
+    cardId: CardId;
+    side: PlayerSide;
+  } | null>(null);
   const [inspectedZone, setInspectedZone] = useState<{
     title: string;
     subtitle?: string;
     cardIds: CardId[];
+    side: PlayerSide;
   } | null>(null);
   const [showLogDrawer, setShowLogDrawer] = useState(false);
   const [showRulesModal, setShowRulesModal] = useState(false);
@@ -227,44 +285,89 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
     [engine, matchState]
   );
 
-  // Helper to apply an action and record newly emitted events
+  // Helper to apply an action and record newly emitted events (outside React StrictMode updaters)
   const dispatchAction = useCallback(
     (action: Action) => {
       setPendingOptionHandIndex(null);
       setPendingPartnerHandIndex(null);
-      setMatchState((prev) => {
-        const next = engine.applyAction(prev, action);
 
-        // Extract newly emitted events whether engine appends or replaces next.events
-        let newEvents: GameEvent[] = [];
-        if (
-          next.events.length >= prev.events.length &&
-          prev.events.every((e, idx) => next.events[idx] === e)
-        ) {
-          newEvents = next.events.slice(prev.events.length);
-        } else {
-          newEvents = next.events;
+      const prev = matchStateRef.current;
+      const next = engine.applyAction(prev, action);
+      matchStateRef.current = next;
+      setMatchState(next);
+
+      // Extract newly emitted events whether engine appends or replaces next.events
+      let newEvents: GameEvent[] = [];
+      if (
+        next.events.length >= prev.events.length &&
+        prev.events.every((e, idx) => next.events[idx] === e)
+      ) {
+        newEvents = next.events.slice(prev.events.length);
+      } else {
+        newEvents = next.events;
+      }
+      processedEventsCountRef.current = next.events.length;
+
+      const revealedBattle =
+        next.lastBattle && next.lastBattle !== prev.lastBattle ? next.lastBattle : null;
+
+      if (newEvents.length > 0 || revealedBattle) {
+        const addedLogs: LoggedGameEvent[] = [];
+        const pPartner = next.config.partnerConfig?.player ?? playerPartnerConfig;
+        const oPartner = next.config.partnerConfig?.opponent ?? opponentPartnerConfig;
+
+        if (revealedBattle) {
+          const pSlot = (
+            revealedBattle.chosenAttacks.player === 'hidden'
+              ? 'circle'
+              : revealedBattle.chosenAttacks.player ?? 'circle'
+          ).toUpperCase();
+          const oSlot = (
+            revealedBattle.chosenAttacks.opponent === 'hidden'
+              ? 'circle'
+              : revealedBattle.chosenAttacks.opponent ?? 'circle'
+          ).toUpperCase();
+          addedLogs.push({
+            id: logIdCounter.current++,
+            turn: next.turnNumber,
+            event: {
+              type: 'log',
+              message: `Clash Reveal — You: [${pSlot}] (${describeRevealSupport(
+                revealedBattle.supportCards.player,
+                pPartner
+              )}) | ${opponentName}: [${oSlot}] (${describeRevealSupport(
+                revealedBattle.supportCards.opponent,
+                oPartner
+              )})`,
+            },
+          });
         }
-        processedEventsCountRef.current = next.events.length;
 
-        if (newEvents.length > 0) {
-          const addedLogs: LoggedGameEvent[] = newEvents.map((event) => ({
+        for (const event of newEvents) {
+          addedLogs.push({
             id: logIdCounter.current++,
             turn: next.turnNumber,
             event,
-          }));
-          setBattleLogs((old) => [...old, ...addedLogs]);
-
-          const newBanners = buildClashBannersFromEvents(newEvents, opponentName);
-          if (newBanners.length > 0 && speedMode !== 'instant') {
-            setClashBanners((old) => [...old, ...newBanners]);
-          }
+          });
         }
 
-        return next;
-      });
+        if (addedLogs.length > 0) {
+          setBattleLogs((old) => [...old, ...addedLogs]);
+        }
+
+        const newBanners = buildClashBannersFromEvents(
+          newEvents,
+          opponentName,
+          revealedBattle,
+          pPartner,
+          oPartner
+        );
+        if (newBanners.length > 0 && speedMode !== 'instant') {
+          setClashBanners((old) => [...old, ...newBanners]);
+        }
+      }
     },
-    [engine, opponentName, speedMode]
+    [engine, opponentName, speedMode, playerPartnerConfig, opponentPartnerConfig]
   );
 
   // Rematch handler
@@ -285,6 +388,7 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
         event,
       }))
     );
+    matchStateRef.current = fresh;
     setMatchState(fresh);
   }, [engine, playerDeck, opponentDeck, matchRulesConfig]);
 
@@ -305,18 +409,16 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
   // AI Turn Automation
   useEffect(() => {
     if (matchState.phase === 'gameOver' || matchState.winner !== null) return;
+    if (clashBanners.length > 0) return;
     if (opponentLegalActions.length === 0) return;
 
     // Determine if AI should act now:
-    // 1. Player has no legal actions (strictly AI's turn)
-    // 2. Or it is AI's active turn during Preparation/Digivolve or Support selection
+    // 1. Player has no legal actions (AI's exclusive phase or player already locked attack/support)
+    // 2. Or it is AI's active turn during Preparation/Digivolve or Rookie Placement
     const shouldAiAct =
       playerLegalActions.length === 0 ||
       (matchState.activePlayer === 'opponent' &&
-        (matchState.phase === 'digivolve' ||
-          matchState.phase === 'rookiePlacement' ||
-          (matchState.phase === 'supportSelect' &&
-            !matchState.battle?.supportDecided?.opponent)));
+        (matchState.phase === 'digivolve' || matchState.phase === 'rookiePlacement'));
 
     if (!shouldAiAct) return;
 
@@ -335,6 +437,7 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
     matchState,
     opponentLegalActions,
     playerLegalActions,
+    clashBanners.length,
     aiDifficulty,
     speedMode,
     chooseAiAction,
@@ -349,6 +452,12 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
   // Player state & Opponent state shortcuts
   const playerState = visibleState.players.player;
   const opponentState = visibleState.players.opponent;
+  const effectivePlayerPartnerCfg =
+    visibleState.config.partnerConfig?.player ?? playerPartnerConfig;
+  const effectiveOpponentPartnerCfg =
+    visibleState.config.partnerConfig?.opponent ?? opponentPartnerConfig;
+  const displayedBattle =
+    visibleState.battle ?? (clashBanners.length > 0 ? visibleState.lastBattle ?? null : null);
   const avatarCard = opponentAvatarCardId !== undefined ? getCardById(opponentAvatarCardId) : undefined;
   const hasActiveOptionModifier = Boolean(playerState.activeDigivolveModifier);
   const activeOptionSourceCard =
@@ -418,7 +527,7 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
       }
 
       if (
-        inspectedCardId !== null ||
+        inspectedCard !== null ||
         inspectedZone !== null ||
         showRulesModal ||
         showForfeitModal ||
@@ -489,7 +598,7 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
-    inspectedCardId,
+    inspectedCard,
     inspectedZone,
     showRulesModal,
     showForfeitModal,
@@ -514,6 +623,7 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
       title: `${ownerLabel} Digivolution Stack`,
       subtitle: 'Cards stacked beneath the active Digimon (bottom to top)',
       cardIds: [...digi.stack, digi.cardId],
+      side,
     });
   };
 
@@ -723,6 +833,7 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
                     title: `${opponentName}'s DP Slot (${opponentState.dpTotal} DP)`,
                     subtitle: 'Cards accumulated for Digivolution (persists across KOs)',
                     cardIds: opponentState.dpSlot,
+                    side: 'opponent',
                   })
                 }
                 title="Click to inspect Opponent's DP Slot cards"
@@ -740,6 +851,7 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
                     title: `${opponentName}'s Offline Pile`,
                     subtitle: 'Discarded & KO’d cards',
                     cardIds: opponentState.offline,
+                    side: 'opponent',
                   })
                 }
                 title="Click to inspect Opponent's Offline discard pile"
@@ -750,15 +862,46 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
               </div>
             </div>
 
-            {/* Opponent Face-down Hand Cards */}
+            {/* Opponent Open Hand Cards (Face-Up per PS1 Rules) */}
             <div
               className="ddcb-opp-hand-row"
-              title={`${opponentName} holds ${opponentState.handCount} card(s) in hand`}
+              title={`${opponentName} holds ${opponentState.hand.length} open card(s) in hand`}
             >
-              {Array.from({ length: opponentState.handCount }).map((_, idx) => (
-                <div key={idx} className="ddcb-card-back" />
-              ))}
-              {opponentState.handCount === 0 && (
+              {opponentState.hand.map((cid, idx) => {
+                const c =
+                  getEffectiveCardData(cid, effectiveOpponentPartnerCfg) ?? getCardById(cid);
+                return (
+                  <button
+                    key={`${cid}-${idx}`}
+                    type="button"
+                    className="ddcb-opp-hand-card"
+                    onClick={() => setInspectedCard({ cardId: cid, side: 'opponent' })}
+                    title={c ? `#${c.no} ${c.name} — Click to inspect` : 'Inspect card'}
+                  >
+                    <div className="ddcb-opp-hand-thumb">
+                      <CardArtwork card={c} />
+                    </div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div
+                        style={{
+                          fontSize: '0.7rem',
+                          fontWeight: 800,
+                          color: '#f8fafc',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        #{c?.no ?? cid} {c?.name ?? `Card #${cid}`}
+                      </div>
+                      <div style={{ fontSize: '0.62rem', color: '#93c5fd', fontWeight: 700 }}>
+                        {c?.level ? `Lv.${c.level}` : 'OPT'} • +{c?.plusP ?? 0}P
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+              {opponentState.hand.length === 0 && (
                 <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Empty Hand</span>
               )}
             </div>
@@ -768,12 +911,12 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
           <ActiveDigimonBattleSlot
             side="opponent"
             activeDigimon={opponentState.battleDigimon}
-            battle={visibleState.battle}
+            battle={displayedBattle}
             phase={visibleState.phase}
             canSelectAttack={false}
             activeDigivolveModifier={opponentState.activeDigivolveModifier}
-            partnerConfig={visibleState.config.partnerConfig?.opponent}
-            onInspectCard={(id) => setInspectedCardId(id)}
+            partnerConfig={effectiveOpponentPartnerCfg}
+            onInspectCard={(id) => setInspectedCard({ cardId: id, side: 'opponent' })}
             onInspectStack={handleInspectStack}
           />
 
@@ -795,21 +938,21 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: '#94a3b8' }}>Chosen Attack:</span>
                 <strong>
-                  {visibleState.battle?.chosenAttacks.opponent ? (
+                  {displayedBattle?.chosenAttacks.opponent ? (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                       <AttackSymbolSvg
                         slot={
-                          visibleState.battle.effectiveAttacks?.opponent ??
-                          visibleState.battle.chosenAttacks.opponent
+                          displayedBattle.effectiveAttacks?.opponent ??
+                          displayedBattle.chosenAttacks.opponent
                         }
                         size={16}
                       />
                       <span>
-                        {visibleState.battle.chosenAttacks.opponent === 'hidden'
+                        {displayedBattle.chosenAttacks.opponent === 'hidden'
                           ? 'Locked In'
                           : (
-                              visibleState.battle.effectiveAttacks?.opponent ??
-                              visibleState.battle.chosenAttacks.opponent
+                              displayedBattle.effectiveAttacks?.opponent ??
+                              displayedBattle.chosenAttacks.opponent
                             ).toUpperCase()}
                       </span>
                     </span>
@@ -821,12 +964,14 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: '#94a3b8' }}>Support Status:</span>
                 <strong>
-                  {visibleState.battle?.supportCards.opponent
-                    ? visibleState.battle.supportCards.opponent.voided
+                  {displayedBattle?.supportCards.opponent
+                    ? displayedBattle.supportCards.opponent.voided
                       ? 'VOIDED!'
-                      : 'Card Set'
-                    : visibleState.battle?.supportDecided?.opponent
-                    ? visibleState.battle?.supportDecided?.player
+                      : displayedBattle.supportCards.opponent.cardId === null
+                      ? 'Locked In (Hidden)'
+                      : 'Card Revealed'
+                    : displayedBattle?.supportDecided?.opponent
+                    ? displayedBattle?.supportDecided?.player
                       ? 'Passed'
                       : 'Locked In'
                     : 'Waiting'}
@@ -858,13 +1003,17 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
          * 2B. CENTER CLASH / SUPPORT ZONE
          * ----------------------------------------------------------------- */}
         <CenterClashZone
-          battle={visibleState.battle}
+          battle={displayedBattle}
           phase={visibleState.phase}
           activePlayer={visibleState.activePlayer}
+          partnerConfigs={{
+            player: effectivePlayerPartnerCfg,
+            opponent: effectiveOpponentPartnerCfg,
+          }}
           activeClashBanner={clashBanners[0] ?? null}
           clashQueueCount={Math.max(0, clashBanners.length - 1)}
           onAdvanceClashBanner={() => setClashBanners((prev) => prev.slice(1))}
-          onInspectCard={(id) => setInspectedCardId(id)}
+          onInspectCard={(id, side) => setInspectedCard({ cardId: id, side })}
         />
 
         {/* -----------------------------------------------------------------
@@ -914,6 +1063,7 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
                       title: `Your DP Slot (${playerState.dpTotal} DP)`,
                       subtitle: 'Cards accumulated for Digivolution (persists across KOs)',
                       cardIds: playerState.dpSlot,
+                      side: 'player',
                     })
                   }
                   title="Click to inspect cards in your DP Slot"
@@ -931,6 +1081,7 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
                       title: 'Your Offline Pile',
                       subtitle: 'Discarded, consumed DP, and KO’d cards',
                       cardIds: playerState.offline,
+                      side: 'player',
                     })
                   }
                   title="Click to inspect your Offline discard pile"
@@ -946,18 +1097,18 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
             <ActiveDigimonBattleSlot
               side="player"
               activeDigimon={playerState.battleDigimon}
-              battle={visibleState.battle}
+              battle={displayedBattle}
               phase={visibleState.phase}
               canSelectAttack={canPlayerSelectAttack}
               activeDigivolveModifier={playerState.activeDigivolveModifier}
-              partnerConfig={visibleState.config.partnerConfig?.player ?? playerPartnerConfig}
+              partnerConfig={effectivePlayerPartnerCfg}
               onSelectAttack={(slot: AttackSlot) => {
                 const action = playerLegalActions.find(
                   (a) => a.type === 'chooseAttack' && a.slot === slot
                 );
                 if (action) dispatchAction(action);
               }}
-              onInspectCard={(id) => setInspectedCardId(id)}
+              onInspectCard={(id) => setInspectedCard({ cardId: id, side: 'player' })}
               onInspectStack={handleInspectStack}
             />
 
@@ -1135,10 +1286,8 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
             {/* Hand Cards Grid */}
             <div className="ddcb-hand-cards-grid">
               {playerState.hand.map((cardId, handIndex) => {
-                const effectivePartnerConfig =
-                  visibleState.config.partnerConfig?.player ?? playerPartnerConfig;
                 const card =
-                  getEffectiveCardData(cardId, effectivePartnerConfig) ?? getCardById(cardId);
+                  getEffectiveCardData(cardId, effectivePlayerPartnerCfg) ?? getCardById(cardId);
 
                 // Find all legal actions for this handIndex
                 const placeRookieActs = playerLegalActions.filter(
@@ -1193,7 +1342,7 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
                     {/* Card Header & Artwork (Click to Inspect) */}
                     <div
                       className="ddcb-hand-card-top"
-                      onClick={() => setInspectedCardId(cardId)}
+                      onClick={() => setInspectedCard({ cardId, side: 'player' })}
                       title="Click to inspect full card details"
                     >
                       <div className="ddcb-hand-thumb">
@@ -1434,7 +1583,8 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
 
             <div className="ddcb-pile-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
               {playerState.hand.map((cid, idx) => {
-                const c = getCardById(cid);
+                const c =
+                  getEffectiveCardData(cid, effectivePlayerPartnerCfg) ?? getCardById(cid);
                 const isRookie = c?.level === 'R' || c?.level === 'R P';
                 return (
                   <div
@@ -1444,7 +1594,7 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
                       borderColor: isRookie ? '#34d399' : '#335c9e',
                       boxShadow: isRookie ? '0 0 10px rgba(52, 211, 153, 0.3)' : undefined,
                     }}
-                    onClick={() => setInspectedCardId(cid)}
+                    onClick={() => setInspectedCard({ cardId: cid, side: 'player' })}
                   >
                     <CardArtwork card={c} />
                     <div style={{ fontSize: '0.76rem', fontWeight: 800, color: '#f8fafc' }}>
@@ -1507,8 +1657,16 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
        * 4. MODALS & DRAWERS (Card Detail, Zone Pile, Battle Log, Rules, Game Over)
        * =================================================================== */}
       <CardDetailModal
-        cardId={inspectedCardId}
-        onClose={() => setInspectedCardId(null)}
+        card={inspectedCard ? getCardById(inspectedCard.cardId) ?? null : null}
+        isOpen={inspectedCard !== null}
+        partnerConfig={
+          inspectedCard
+            ? inspectedCard.side === 'player'
+              ? effectivePlayerPartnerCfg
+              : effectiveOpponentPartnerCfg
+            : undefined
+        }
+        onClose={() => setInspectedCard(null)}
       />
 
       {inspectedZone && (
@@ -1516,7 +1674,12 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
           title={inspectedZone.title}
           subtitle={inspectedZone.subtitle}
           cardIds={inspectedZone.cardIds}
-          onSelectCard={(id) => setInspectedCardId(id)}
+          partnerConfig={
+            inspectedZone.side === 'opponent'
+              ? effectiveOpponentPartnerCfg
+              : effectivePlayerPartnerCfg
+          }
+          onSelectCard={(id) => setInspectedCard({ cardId: id, side: inspectedZone.side })}
           onClose={() => setInspectedZone(null)}
         />
       )}
@@ -1531,8 +1694,7 @@ export const BattleScreen: React.FC<BattleScreenProps> = ({
 
       {pendingPartnerHandIndex !== null &&
         (() => {
-          const effectivePartnerConfig =
-            visibleState.config.partnerConfig?.player ?? playerPartnerConfig;
+          const effectivePartnerConfig = effectivePlayerPartnerCfg;
           const partnerCardId = playerState.hand[pendingPartnerHandIndex];
           const partnerCard =
             partnerCardId !== undefined

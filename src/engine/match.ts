@@ -20,6 +20,7 @@ import type {
   CreateMatchParams,
   DigivolveModifier,
   EngineApi,
+  GameEvent,
   MatchPhase,
   MatchState,
   PlayerSide,
@@ -28,6 +29,7 @@ import type {
   VisibleBattleContext,
   VisibleMatchState,
   VisiblePlayerState,
+  VisibleSupportSlotCard,
 } from '../types/game';
 import {
   DECK_SIZE,
@@ -307,29 +309,6 @@ export function canNormalOrOptionDigivolve(player: PlayerState, toCard: CardData
 }
 
 /**
- * Checks whether `player` can Armor Digivolve their active Partner Rookie ('R P') into `toCard` ('A').
- */
-export function canArmorDigivolve(
-  player: PlayerState,
-  toCard: CardData,
-  disabledArmorCardIds?: readonly CardId[],
-): boolean {
-  const active = player.battleDigimon;
-  if (!active) return false;
-  if (toCard.kind !== 'Digimon' || toCard.level !== 'A') return false;
-
-  const fromCard = getCardById(active.cardId);
-  if (!fromCard || fromCard.level !== 'R P') return false;
-  if (disabledArmorCardIds && disabledArmorCardIds.includes(fromCard.id)) {
-    return false;
-  }
-
-  const lineage = ARMOR_LINEAGE[fromCard.id];
-  if (!lineage) return false;
-  return lineage.includes(toCard.id);
-}
-
-/**
  * Checks whether a Digivolve-phase Option card (`293`..`300`) can currently be used by `player`.
  * During the Digivolve phase, any Digivolve-phase Option card in hand can be used whenever the
  * player has an active Digimon (if it produces no digivolution, it is simply discarded).
@@ -569,6 +548,7 @@ export function createMatch(params: CreateMatchParams): MatchState {
     phase: 'mulligan',
     mulliganDecided: { player: false, opponent: false },
     battle: null,
+    lastBattle: null,
     winner: null,
     events: [
       {
@@ -828,7 +808,6 @@ function performDigivolveFromHand(
   state: MatchState,
   side: PlayerSide,
   handIndex: number,
-  isArmor: boolean,
 ): void {
   const player = state.players[side];
   const active = player.battleDigimon;
@@ -842,29 +821,6 @@ function performDigivolveFromHand(
   const toCard = getCardById(cardId);
   if (!toCard || toCard.kind !== 'Digimon') {
     throw new Error(`Card ${cardId} is not a Digimon card.`);
-  }
-
-  if (isArmor) {
-    if (!canArmorDigivolve(player, toCard, state.config.disableArmorOnCardIds?.[side])) {
-      throw new Error(`Illegal Armor Digivolution from ${active.cardId} to ${toCard.id}.`);
-    }
-    player.hand.splice(handIndex, 1);
-    const fromCardId = active.cardId;
-    active.stack.push(fromCardId);
-    active.cardId = toCard.id;
-    active.maxHp = toCard.hp;
-    active.currentHp = toCard.hp;
-    active.effectiveSpecialty = toCard.specialty ?? active.effectiveSpecialty;
-    // Armor Digivolve costs 0 DP and keeps dpSlot intact!
-    state.events.push({
-      type: 'digivolved',
-      side,
-      fromCardId,
-      toCardId: toCard.id,
-      hp: active.currentHp,
-      method: 'armor',
-    });
-    return;
   }
 
   if (!canNormalOrOptionDigivolve(player, toCard)) {
@@ -1202,7 +1158,7 @@ export function applyAction( currentState: MatchState, action: Action): MatchSta
           action.targetHandIndex > action.handIndex
             ? action.targetHandIndex - 1
             : action.targetHandIndex;
-        performDigivolveFromHand(state, side, adjustedIdx, false);
+        performDigivolveFromHand(state, side, adjustedIdx);
       }
 
       return state;
@@ -1212,55 +1168,7 @@ export function applyAction( currentState: MatchState, action: Action): MatchSta
       if (state.phase !== 'digivolve' || state.activePlayer !== side) {
         throw new Error(`Action 'digivolve' not allowed for '${side}' in phase '${state.phase}'.`);
       }
-      performDigivolveFromHand(state, side, action.handIndex, false);
-      return state;
-    }
-
-    case 'armorDigivolve': {
-      if (state.phase !== 'digivolve' || state.activePlayer !== side) {
-        throw new Error(
-          `Action 'armorDigivolve' not allowed for '${side}' in phase '${state.phase}'.`,
-        );
-      }
-      const active = player.battleDigimon;
-      if (!active) {
-        throw new Error(`Cannot Armor Digivolve: ${side} has no active Digimon.`);
-      }
-      const targetArmorId =
-        action.armorCardId ??
-        action.cardId ??
-        (action.handIndex !== undefined ? player.hand[action.handIndex] : undefined);
-      if (targetArmorId === undefined) {
-        throw new Error(`Missing target Armor card for 'armorDigivolve'.`);
-      }
-      const toCard = getCardById(targetArmorId);
-      if (
-        !toCard ||
-        !canArmorDigivolve(player, toCard, state.config.disableArmorOnCardIds?.[side])
-      ) {
-        throw new Error(`Illegal Armor Digivolution from ${active.cardId} to ${targetArmorId}.`);
-      }
-      if (
-        action.armorCardId === undefined &&
-        action.handIndex !== undefined &&
-        player.hand[action.handIndex] === toCard.id
-      ) {
-        player.hand.splice(action.handIndex, 1);
-      }
-      const fromCardId = active.cardId;
-      active.stack.push(fromCardId);
-      active.cardId = toCard.id;
-      active.maxHp = toCard.hp;
-      active.currentHp = toCard.hp;
-      active.effectiveSpecialty = toCard.specialty ?? active.effectiveSpecialty;
-      state.events.push({
-        type: 'digivolved',
-        side,
-        fromCardId,
-        toCardId: toCard.id,
-        hp: active.currentHp,
-        method: 'armor',
-      });
+      performDigivolveFromHand(state, side, action.handIndex);
       return state;
     }
 
@@ -1387,6 +1295,7 @@ export function applyAction( currentState: MatchState, action: Action): MatchSta
         state.battle.supportCards[side] = {
           cardId,
           source: 'hand',
+          handIndex: action.handIndex,
         };
         state.events.push({
           type: 'supportPlayed',
@@ -1462,17 +1371,57 @@ export function applyAction( currentState: MatchState, action: Action): MatchSta
 }
 
 /**
- * Projects a `MatchState` into a `VisibleMatchState` for `viewer`, hiding the opponent's
- * hand contents, Online Deck ordering, and unrevealed attack selection.
+ * Projects a `MatchState` into a `VisibleMatchState` for `viewer`:
+ * - Hands remain open (face-up) to both players per PS1 DDCB rules (while reconstructing any
+ *   unrevealed face-down Support card played from hand so the face-down choice is not spoiled).
+ * - Hides Online Deck ordering, unrevealed attack choices, unrevealed Support cards, and private
+ *   current-battle events until both players complete Attack and Support selection.
  */
 export function getVisibleState(state: MatchState, viewer: PlayerSide): VisibleMatchState {
+  const other = otherSide(viewer);
+  const bothAttacksChosen = Boolean(
+    state.battle &&
+      state.battle.chosenAttacks.player !== null &&
+      state.battle.chosenAttacks.opponent !== null,
+  );
+  const bothSupportsDecided = Boolean(
+    state.battle &&
+      (state.phase === 'battleResolve' ||
+        (Boolean(state.battle.supportDecided?.player) &&
+          Boolean(state.battle.supportDecided?.opponent))),
+  );
+  const battleRevealed = Boolean(
+    state.battle &&
+      (state.phase === 'battleResolve' || (bothAttacksChosen && bothSupportsDecided)),
+  );
+
   const makeVisiblePlayer = (side: PlayerSide): VisiblePlayerState => {
     const p = state.players[side];
-    const isViewer = side === viewer;
+    const hand = [...p.hand];
+    const isUnrevealedOtherHandSupport =
+      side === other &&
+      Boolean(state.battle) &&
+      !battleRevealed &&
+      Boolean(state.battle?.supportDecided?.[side]) &&
+      state.battle?.supportCards[side]?.source === 'hand';
+
+    if (isUnrevealedOtherHandSupport) {
+      const sup = state.battle!.supportCards[side]!;
+      const insertAt = Math.min(hand.length, Math.max(0, sup.handIndex ?? hand.length));
+      hand.splice(insertAt, 0, sup.cardId);
+    }
+
+    const hideDeckTopCount =
+      side === other &&
+      Boolean(state.battle) &&
+      !battleRevealed &&
+      Boolean(state.battle?.supportDecided?.[side]) &&
+      state.battle?.supportCards[side]?.source === 'deckTop';
+
     return {
-      onlineCount: p.online.length,
-      handCount: p.hand.length,
-      hand: isViewer ? [...p.hand] : [],
+      onlineCount: hideDeckTopCount ? p.online.length + 1 : p.online.length,
+      handCount: hand.length,
+      hand,
       battleDigimon: p.battleDigimon ? structuredClone(p.battleDigimon) : null,
       dpSlot: [...p.dpSlot],
       dpTotal: p.dpTotal,
@@ -1484,15 +1433,28 @@ export function getVisibleState(state: MatchState, viewer: PlayerSide): VisibleM
     };
   };
 
+  const makeVisibleSupport = (side: PlayerSide): VisibleSupportSlotCard | null => {
+    const sup = state.battle?.supportCards[side];
+    if (!sup) return null;
+    if (battleRevealed) {
+      return {
+        cardId: sup.cardId,
+        source: sup.source,
+        ...(sup.voided ? { voided: true } : {}),
+      };
+    }
+    if (side === viewer) {
+      return {
+        cardId: sup.source === 'deckTop' ? null : sup.cardId,
+        source: sup.source,
+        ...(sup.voided ? { voided: true } : {}),
+      };
+    }
+    return null;
+  };
+
   let visibleBattle: VisibleBattleContext | null = null;
   if (state.battle) {
-    const bothAttacksChosen =
-      state.battle.chosenAttacks.player !== null && state.battle.chosenAttacks.opponent !== null;
-    const bothSupportsDecided =
-      state.phase === 'battleResolve' ||
-      (Boolean(state.battle.supportDecided?.player) &&
-        Boolean(state.battle.supportDecided?.opponent));
-    const other = otherSide(viewer);
     const otherChosen = state.battle.chosenAttacks[other];
 
     visibleBattle = {
@@ -1504,7 +1466,7 @@ export function getVisibleState(state: MatchState, viewer: PlayerSide): VisibleM
             ? state.battle.chosenAttacks.player
             : otherChosen === null
               ? null
-              : bothAttacksChosen
+              : battleRevealed
                 ? otherChosen
                 : 'hidden',
         opponent:
@@ -1512,42 +1474,74 @@ export function getVisibleState(state: MatchState, viewer: PlayerSide): VisibleM
             ? state.battle.chosenAttacks.opponent
             : otherChosen === null
               ? null
-              : bothAttacksChosen
+              : battleRevealed
                 ? otherChosen
                 : 'hidden',
       },
       effectiveAttacks: state.battle.effectiveAttacks
         ? {
             player:
-              viewer === 'player' || bothAttacksChosen
+              viewer === 'player' || battleRevealed
                 ? state.battle.effectiveAttacks.player
                 : null,
             opponent:
-              viewer === 'opponent' || bothAttacksChosen
+              viewer === 'opponent' || battleRevealed
                 ? state.battle.effectiveAttacks.opponent
                 : null,
           }
         : undefined,
       supportCards: {
-        player:
-          (viewer === 'player' || bothSupportsDecided) && state.battle.supportCards.player
-            ? { ...state.battle.supportCards.player }
-            : null,
-        opponent:
-          (viewer === 'opponent' || bothSupportsDecided) && state.battle.supportCards.opponent
-            ? { ...state.battle.supportCards.opponent }
-            : null,
+        player: makeVisibleSupport('player'),
+        opponent: makeVisibleSupport('opponent'),
       },
       supportDecided: state.battle.supportDecided
         ? { ...state.battle.supportDecided }
         : undefined,
       computedPowers: {
         player:
-          viewer === 'player' || bothAttacksChosen ? state.battle.computedPowers.player : 0,
+          viewer === 'player' || battleRevealed ? state.battle.computedPowers.player : 0,
         opponent:
-          viewer === 'opponent' || bothAttacksChosen ? state.battle.computedPowers.opponent : 0,
+          viewer === 'opponent' || battleRevealed ? state.battle.computedPowers.opponent : 0,
       },
     };
+  }
+
+  let visibleEvents: GameEvent[];
+  if (
+    state.battle &&
+    !battleRevealed &&
+    (state.phase === 'attackSelect' || state.phase === 'supportSelect')
+  ) {
+    let battleBoundaryIdx = 0;
+    for (let i = state.events.length - 1; i >= 0; i--) {
+      const ev = state.events[i]!;
+      if (
+        ev.type === 'phaseChanged' &&
+        (ev.phase === 'turnEnd' || ev.phase === 'battleResolve')
+      ) {
+        battleBoundaryIdx = i + 1;
+        break;
+      }
+    }
+    visibleEvents = [];
+    for (let i = 0; i < state.events.length; i++) {
+      const ev = state.events[i]!;
+      if (i >= battleBoundaryIdx) {
+        if (ev.type === 'attackChosen' && ev.side === other) {
+          continue;
+        }
+        if ((ev.type === 'supportPlayed' || ev.type === 'supportPassed') && ev.side === other) {
+          continue;
+        }
+        if (ev.type === 'supportPlayed' && ev.side === viewer && ev.source === 'deckTop') {
+          visibleEvents.push({ ...ev, cardId: -1 });
+          continue;
+        }
+      }
+      visibleEvents.push(ev);
+    }
+  } else {
+    visibleEvents = [...state.events];
   }
 
   return {
@@ -1561,9 +1555,10 @@ export function getVisibleState(state: MatchState, viewer: PlayerSide): VisibleM
     phase: state.phase,
     mulliganDecided: state.mulliganDecided ? { ...state.mulliganDecided } : undefined,
     battle: visibleBattle,
+    lastBattle: state.lastBattle ? structuredClone(state.lastBattle) : null,
     winner: state.winner,
     winReason: state.winReason,
-    events: [...state.events],
+    events: visibleEvents,
     config: { ...state.config },
   };
 }

@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { ALL_CARDS, getCardById, getCardImageUrl } from '../data/cards';
+import { getEffectiveCardData } from '../data/digiParts';
 import {
   ALL_BASE_DECKS,
   STARTER_DECKS,
@@ -180,11 +181,11 @@ export const DeckBuilder: React.FC<DeckBuilderProps> = ({
     }
     const list: Array<{ card: CardData; count: number }> = [];
     for (const [id, count] of map.entries()) {
-      const c = getCardById(id);
+      const c = getEffectiveCardData(id, state.partnerConfigs) ?? getCardById(id);
       if (c) list.push({ card: c, count });
     }
     return list;
-  }, [currentDeck?.cards]);
+  }, [currentDeck?.cards, state.partnerConfigs]);
 
   // Filtered Catalog Cards
   const filteredCatalog = useMemo(() => {
@@ -332,28 +333,32 @@ export const DeckBuilder: React.FC<DeckBuilderProps> = ({
   };
 
   const dealSampleHand = (isMulligan: boolean) => {
-    const pool = [...(currentDeck?.cards ?? [])];
-    if (pool.length < 4) return;
-    for (let i = pool.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      const tmp = pool[i]!;
-      pool[i] = pool[j]!;
-      pool[j] = tmp;
-    }
-    const hand = pool.slice(0, 4);
-    const online = pool.slice(4);
+    const baseDeck = [...(currentDeck?.cards ?? [])];
+    if (baseDeck.length < 4) return;
     const isRookie = (id: CardId): boolean => {
       const card = getCardById(id);
       return Boolean(card && card.kind === 'Digimon' && (card.level === 'R' || card.level === 'R P'));
     };
-    if (!hand.some(isRookie)) {
-      const rookieIdx = online.findIndex(isRookie);
-      if (rookieIdx >= 0) {
-        const rookieId = online[rookieIdx]!;
-        online[rookieIdx] = hand[0]!;
-        hand[0] = rookieId;
+    const shuffleDeck = (arr: CardId[]) => {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const tmp = arr[i]!;
+        arr[i] = arr[j]!;
+        arr[j] = tmp;
       }
+    };
+
+    let deck = [...baseDeck];
+    shuffleDeck(deck);
+    let hand = deck.splice(0, 4);
+    let attempts = 0;
+    while (!hand.some(isRookie) && attempts < 10) {
+      attempts += 1;
+      deck.push(...hand);
+      shuffleDeck(deck);
+      hand = deck.splice(0, 4);
     }
+
     setSimHand(hand);
     setSimMulliganUsed(isMulligan);
     setSimDrawCount((c) => (isMulligan ? c : c + 1));
@@ -1742,6 +1747,7 @@ export const DeckBuilder: React.FC<DeckBuilderProps> = ({
           card={inspectedCard}
           isOpen={Boolean(inspectedCard)}
           mode="modal"
+          partnerConfig={state.partnerConfigs}
           onClose={() => setInspectedCard(null)}
           onSelectCard={(c) => setInspectedCard(c)}
           deckCount={validation.copyCounts[inspectedCard.id] ?? 0}

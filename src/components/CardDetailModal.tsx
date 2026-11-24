@@ -1,7 +1,15 @@
 import React, { useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Layers, Sparkles, Swords, X } from 'lucide-react';
 import { ALL_CARDS, getCardById, getCardImageUrl } from '../data/cards';
-import { MAX_COPIES, MAX_PARTNER_COPIES, type CardData, type XEffect } from '../types/game';
+import { ARMOR_TO_PARTNER_ID, getEffectiveCardData } from '../data/digiParts';
+import { ARMOR_LINEAGE } from '../engine';
+import {
+  MAX_COPIES,
+  MAX_PARTNER_COPIES,
+  type CardData,
+  type PartnerConfigMap,
+  type XEffect,
+} from '../types/game';
 import {
   AttackSymbolIcon,
   XEffectBadge,
@@ -11,34 +19,6 @@ import {
   getLevelFullName,
   getSpecialtyMeta,
 } from './CardView';
-
-/**
- * Canonical Partner (R P) <-> Armor (A) lineage map from RULES.md Section 6.4.
- */
-export const PARTNER_TO_ARMOR_MAP: Record<number, number[]> = {
-  175: [172, 173, 185], // Veemon -> Flamedramon, Magnamon, Raidramon
-  182: [179, 188], // Hawkmon -> Halsemon, Shurimon
-  183: [174, 180], // Patamon -> Baronmon, Pegasusmon
-  184: [178, 181], // Gatomon -> Tylomon, Nefertimon
-  187: [177, 186], // Wormmon -> Quetzalmon, Shadramon
-  190: [176, 189], // Armadillomon -> Submarimon, Digmon
-};
-
-export const ARMOR_TO_PARTNER_MAP: Record<number, number> = {
-  172: 175,
-  173: 175,
-  185: 175,
-  179: 182,
-  188: 182,
-  174: 183,
-  180: 183,
-  178: 184,
-  181: 184,
-  177: 187,
-  186: 187,
-  176: 190,
-  189: 190,
-};
 
 function describeXEffectDetail(effect?: XEffect): string | null {
   if (!effect) return null;
@@ -82,7 +62,7 @@ export function getDigivolutionNotes(card: CardData): {
   }
 
   if (card.level === 'R P') {
-    const armorIds = PARTNER_TO_ARMOR_MAP[card.id] ?? [];
+    const armorIds = ARMOR_LINEAGE[card.id] ?? [];
     for (const aid of armorIds) {
       const armorCard = getCardById(aid);
       if (armorCard) {
@@ -96,7 +76,7 @@ export function getDigivolutionNotes(card: CardData): {
   }
 
   if (card.level === 'A') {
-    const partnerId = ARMOR_TO_PARTNER_MAP[card.id];
+    const partnerId = ARMOR_TO_PARTNER_ID[card.id];
     if (partnerId !== undefined) {
       const partnerCard = getCardById(partnerId);
       if (partnerCard) {
@@ -134,6 +114,7 @@ export interface CardDetailModalProps {
   card: CardData | null;
   isOpen?: boolean;
   mode?: 'modal' | 'panel';
+  partnerConfig?: PartnerConfigMap;
   onClose?: () => void;
   onSelectCard?: (card: CardData) => void;
   deckCount?: number;
@@ -144,9 +125,10 @@ export interface CardDetailModalProps {
 }
 
 export const CardDetailModal: React.FC<CardDetailModalProps> = ({
-  card,
+  card: rawCard,
   isOpen = true,
   mode = 'modal',
+  partnerConfig,
   onClose,
   onSelectCard,
   deckCount,
@@ -155,6 +137,8 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({
   canAddToDeck = true,
   addDisabledReason = null,
 }) => {
+  const card = rawCard ? (getEffectiveCardData(rawCard.id, partnerConfig) ?? rawCard) : null;
+
   useEffect(() => {
     ensureDigiviceUiStyles();
   }, []);
