@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ArrowLeft,
   BookOpen,
   HelpCircle,
   Layers,
@@ -43,6 +44,21 @@ import {
 } from './types/game';
 
 export type NavTab = 'arena' | 'deckbuilder' | 'partners' | 'codex';
+
+const LIVE_ARCADE_HUB_URL = 'https://christoctavianus-0000.github.io/Mini-Game/';
+
+function getArcadeHubUrl(): string {
+  if (
+    typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname === '[::1]') &&
+    /\/dist(\/|$)/i.test(window.location.pathname)
+  ) {
+    return '../../index.html';
+  }
+  return LIVE_ARCADE_HUB_URL;
+}
 
 const BattleScreen = React.lazy(() =>
   import('./components/BattleScreen').then((m) => ({ default: m.BattleScreen }))
@@ -91,6 +107,7 @@ export const App: React.FC = () => {
   }, [toastMessage]);
 
   const activeDeck = useMemo(() => getActiveDeck(storeState), [storeState]);
+  const arcadeHubUrl = useMemo(() => getArcadeHubUrl(), []);
   const activeDeckValidation = useMemo(
     () => validateDeck(activeDeck.cards),
     [activeDeck.cards]
@@ -209,28 +226,42 @@ export const App: React.FC = () => {
     <div className="ddcb-app">
       {/* Top Cyber-Digital Digivice Navigation Header */}
       <header className="ddcb-header">
-        <div
-          className="ddcb-brand"
-          style={{ cursor: activeMatch ? 'default' : 'pointer' }}
-          onClick={() => {
-            if (!activeMatch) {
-              soundEngine.playClick();
-              setActiveTab('arena');
-            }
-          }}
-        >
-          <div className="ddcb-brand__crest">
-            <img
-              src={getUiAssetUrl('digivice.svg')}
-              alt="Digivice"
-              className="ddcb-brand__logo"
-            />
-          </div>
-          <div>
-            <h1 className="ddcb-brand__title">Digimon Digital Card Battle</h1>
-            <p className="ddcb-brand__sub">
-              PS1 Cyber-Arena Edition • {ALL_CARDS.length} Cards • {OPPONENTS.length} Duelists
-            </p>
+        <div className="ddcb-brand-group">
+          {!activeMatch && (
+            <a
+              href={arcadeHubUrl}
+              className="ddcb-hub-link"
+              onClick={() => soundEngine.playClick()}
+              title="Back to Mini Game Arcade Hub"
+              aria-label="Back to Mini Game Arcade Hub"
+            >
+              <ArrowLeft size={15} aria-hidden="true" />
+              <span className="ddcb-hub-link__label">Arcade</span>
+            </a>
+          )}
+          <div
+            className="ddcb-brand"
+            style={{ cursor: activeMatch ? 'default' : 'pointer' }}
+            onClick={() => {
+              if (!activeMatch) {
+                soundEngine.playClick();
+                setActiveTab('arena');
+              }
+            }}
+          >
+            <div className="ddcb-brand__crest">
+              <img
+                src={getUiAssetUrl('digivice.svg')}
+                alt="Digivice"
+                className="ddcb-brand__logo"
+              />
+            </div>
+            <div>
+              <h1 className="ddcb-brand__title">Digimon Digital Card Battle</h1>
+              <p className="ddcb-brand__sub">
+                PS1 Cyber-Arena Edition • {ALL_CARDS.length} Cards • {OPPONENTS.length} Duelists
+              </p>
+            </div>
           </div>
         </div>
 
